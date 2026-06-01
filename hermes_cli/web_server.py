@@ -1237,6 +1237,8 @@ async def remove_env_var(body: EnvVarDelete):
         return {"ok": True, "key": body.key}
     except HTTPException:
         raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception:
         _log.exception("DELETE /api/env failed")
         raise HTTPException(status_code=500, detail="Internal server error")
