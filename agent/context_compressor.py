@@ -480,6 +480,7 @@ class ContextCompressor(ContextEngine):
         self._last_compression_savings_pct = 100.0
         self._ineffective_compression_count = 0
         self._summary_failure_cooldown_until = 0.0  # transient errors must not block a fresh session
+        self.tail_token_budget = int(self.threshold_tokens * self.summary_target_ratio)
 
     def update_model(
         self,
