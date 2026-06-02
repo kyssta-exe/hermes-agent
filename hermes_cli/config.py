@@ -1005,6 +1005,21 @@ DEFAULT_CONFIG = {
             "timeout": 600,
             "extra_body": {},
         },
+        # Code — dedicated model for code generation, review, refactoring,
+        # and other coding-related tasks. When set, coding subagents and
+        # delegate_task workers performing code-heavy tasks can route
+        # through this model instead of the main model. Useful when the
+        # main model is a general-purpose chat model but you want a
+        # specialist coding model (e.g. DeepSeek Coder, Claude Sonnet)
+        # for code-intensive work.
+        "code": {
+            "provider": "auto",
+            "model": "",
+            "base_url": "",
+            "api_key": "",
+            "timeout": 120,
+            "extra_body": {},
+        },
     },
     
     "display": {

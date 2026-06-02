@@ -2510,6 +2510,7 @@ _AUX_TASKS: list[tuple[str, str, str]] = [
     ("kanban_decomposer", "Kanban decomposer", "task decomposition"),
     ("profile_describer", "Profile describer", "auto profile descriptions"),
     ("curator", "Curator", "skill-usage review pass"),
+    ("code", "Code", "code generation and coding tasks"),
 ]
 
 

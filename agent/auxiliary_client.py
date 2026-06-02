@@ -4783,7 +4783,8 @@ def call_llm(
 
     Args:
         task: Auxiliary task name ("compression", "vision", "web_extract",
-              "session_search", "skills_hub", "mcp", "title_generation").
+              "session_search", "skills_hub", "mcp", "title_generation",
+              "code").
               Reads provider:model from config/env. Ignored if provider is set.
         provider: Explicit provider override.
         model: Explicit model override.
@@ -5146,6 +5147,28 @@ def call_llm(
                 logger.debug("Auxiliary: cache eviction after connection error failed",
                              exc_info=True)
         raise
+
+
+def resolve_code_model() -> Tuple[Optional[str], Optional[str]]:
+    """Return (provider, model) for the auxiliary.code task, or (None, None).
+
+    Convenience function for coding tools and delegation to check if a
+    dedicated code model is configured. Returns the resolved provider and
+    model from ``auxiliary.code`` config, or (None, None) when unconfigured.
+
+    Example::
+
+        provider, model = resolve_code_model()
+        if model:
+            response = call_llm(task="code", messages=messages)
+    """
+    try:
+        provider, model, _, _, _ = _resolve_task_provider_model(task="code")
+        if provider == "auto" and not model:
+            return None, None
+        return provider, model
+    except Exception:
+        return None, None
 
 
 def extract_content_or_reasoning(response) -> str:

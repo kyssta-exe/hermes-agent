@@ -2052,32 +2052,57 @@ def delegate_task(
     # Wrapped in try/finally so the global is always restored even if a
     # child build raises (otherwise _last_resolved_tool_names stays corrupted).
     children = []
+
+    # Check if auxiliary.code is configured for automatic code-task routing.
+    # When set, code-heavy subagents are routed through this model instead
+    # of the delegation or parent model.
+    _aux_code_cfg = _resolve_auxiliary_code_config()
+    _aux_code_creds = None
+    if _aux_code_cfg:
+        try:
+            _aux_code_creds = _resolve_delegation_credentials(_aux_code_cfg, parent_agent)
+        except (ValueError, Exception) as exc:
+            logger.debug("auxiliary.code credential resolution failed, falling back to delegation creds: %s", exc)
+            _aux_code_creds = None
+
     try:
         for i, t in enumerate(task_list):
             task_acp_args = t.get("acp_args") if "acp_args" in t else None
             # Per-task role beats top-level; normalise again so unknown
             # per-task values warn and degrade to leaf uniformly.
             effective_role = _normalize_role(t.get("role") or top_role)
+
+            # Route code-heavy tasks through auxiliary.code when configured.
+            task_toolsets = t.get("toolsets") or toolsets
+            if _aux_code_creds and _is_code_task(t["goal"], task_toolsets):
+                task_creds = _aux_code_creds
+                logger.info(
+                    "delegate_task: routing task %d ('%s') through auxiliary.code model",
+                    i, t["goal"][:60],
+                )
+            else:
+                task_creds = creds
+
             child = _build_child_agent(
                 task_index=i,
                 goal=t["goal"],
                 context=t.get("context"),
-                toolsets=t.get("toolsets") or toolsets,
-                model=creds["model"],
+                toolsets=task_toolsets,
+                model=task_creds["model"],
                 max_iterations=effective_max_iter,
                 task_count=n_tasks,
                 parent_agent=parent_agent,
-                override_provider=creds["provider"],
-                override_base_url=creds["base_url"],
-                override_api_key=creds["api_key"],
-                override_api_mode=creds["api_mode"],
+                override_provider=task_creds["provider"],
+                override_base_url=task_creds["base_url"],
+                override_api_key=task_creds["api_key"],
+                override_api_mode=task_creds["api_mode"],
                 override_acp_command=t.get("acp_command")
                 or acp_command
-                or creds.get("command"),
+                or task_creds.get("command"),
                 override_acp_args=(
                     task_acp_args
                     if task_acp_args is not None
-                    else (acp_args if acp_args is not None else creds.get("args"))
+                    else (acp_args if acp_args is not None else task_creds.get("args"))
                 ),
                 role=effective_role,
             )
@@ -2339,6 +2364,86 @@ def _resolve_child_credential_pool(effective_provider: Optional[str], parent_age
             effective_provider,
             exc,
         )
+    return None
+
+
+_CODE_KEYWORDS = frozenset({
+    "code", "coding", "program", "implement", "refactor", "debug",
+    "write function", "write script", "write a function", "write a script",
+    "compile", "lint", "format", "review code", "pull request", "commit",
+    "merge", "git ", "python", "javascript", "typescript", "rust",
+    "golang", "java", "c++", "html", "css", "react", "vue", "angular",
+    "fastapi", "flask", "django", "endpoint", "database", "sql",
+    "migrate", "deploy", "docker", "kubernetes", "ci/cd", "pipeline",
+    "webpack", "vite", "npm", "pip ",
+})
+
+# Pairs: when both words appear anywhere in the goal (not necessarily adjacent),
+# the task is code-related.  Handles "fix the login bug", "write unit tests", etc.
+_CODE_WORD_PAIRS = [
+    ("fix", "bug"),
+    ("fix", "error"),
+    ("fix", "issue"),
+    ("write", "test"),
+    ("write", "code"),
+    ("write", "script"),
+    ("write", "function"),
+    ("add", "test"),
+    ("add", "feature"),
+    ("build", "api"),
+    ("build", "app"),
+    ("create", "endpoint"),
+]
+
+
+def _is_code_task(goal: str, toolsets: Optional[List[str]] = None) -> bool:
+    """Detect whether a delegation task is code-heavy.
+
+    Returns True when the task description or requested toolsets suggest
+    the child agent will be writing, reviewing, or debugging code.
+    Used to route code-heavy subagents through auxiliary.code when
+    configured.
+    """
+    goal_lower = (goal or "").lower()
+    # If the goal explicitly mentions code-related keywords
+    if any(kw in goal_lower for kw in _CODE_KEYWORDS):
+        return True
+    # Check word pairs (both words must appear anywhere in the goal)
+    if any(w1 in goal_lower and w2 in goal_lower for w1, w2 in _CODE_WORD_PAIRS):
+        return True
+    # If the task requests terminal + file toolsets (typical for code work)
+    if toolsets:
+        ts = set(toolsets)
+        if "terminal" in ts and "file" in ts:
+            return True
+        if "code_execution" in ts:
+            return True
+    return False
+
+
+def _resolve_auxiliary_code_config() -> Optional[dict]:
+    """Read auxiliary.code config if configured (non-empty provider/model).
+
+    Returns the config dict if auxiliary.code has explicit settings,
+    None otherwise. This avoids routing through auxiliary.code when
+    the user hasn't configured it.
+    """
+    try:
+        from hermes_cli.config import load_config
+        config = load_config()
+    except Exception:
+        return None
+    aux = config.get("auxiliary", {}) if isinstance(config, dict) else {}
+    code_cfg = aux.get("code", {}) if isinstance(aux, dict) else {}
+    if not isinstance(code_cfg, dict):
+        return None
+    # Only activate if the user has explicitly set provider or model
+    provider = str(code_cfg.get("provider", "")).strip()
+    model = str(code_cfg.get("model", "")).strip()
+    if provider and provider != "auto":
+        return code_cfg
+    if model:
+        return code_cfg
     return None
 
 
