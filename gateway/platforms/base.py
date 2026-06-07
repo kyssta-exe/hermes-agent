@@ -4062,6 +4062,13 @@ class BasePlatformAdapter(ABC):
         )
 
         async def _stop_typing_task() -> None:
+            # Signal the typing loop to exit cooperatively via its stop_event
+            # before cancelling the task.  Under Telegram flood control the
+            # underlying send_chat_action may take a while to respond to
+            # task.cancel(), so setting the event lets _keep_typing notice
+            # the stop condition on its next polling tick (every 0.25 s)
+            # and exit cleanly even when the network call hasn't returned yet.
+            interrupt_event.set()
             typing_task.cancel()
             try:
                 await asyncio.wait_for(asyncio.shield(typing_task), timeout=0.5)
