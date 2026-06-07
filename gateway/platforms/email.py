@@ -9,7 +9,10 @@ Environment variables:
     EMAIL_IMAP_PORT     — IMAP server port (default: 993)
     EMAIL_SMTP_HOST     — SMTP server host (e.g., smtp.gmail.com)
     EMAIL_SMTP_PORT     — SMTP server port (default: 587)
-    EMAIL_ADDRESS       — Email address for the agent
+    EMAIL_ADDRESS       — Email address for the agent (From: header)
+    EMAIL_LOGIN_USER    — IMAP/SMTP login username (defaults to EMAIL_ADDRESS;
+                          set this when your login user differs from the
+                          public address, e.g. iCloud custom domains)
     EMAIL_PASSWORD      — Email password or app-specific password
     EMAIL_POLL_INTERVAL — Seconds between mailbox checks (default: 15)
     EMAIL_ALLOWED_USERS — Comma-separated list of allowed sender addresses
@@ -249,6 +252,7 @@ class EmailAdapter(BasePlatformAdapter):
         super().__init__(config, Platform.EMAIL)
 
         self._address = os.getenv("EMAIL_ADDRESS", "")
+        self._login_user = os.getenv("EMAIL_LOGIN_USER", "") or self._address
         self._password = os.getenv("EMAIL_PASSWORD", "")
         self._imap_host = os.getenv("EMAIL_IMAP_HOST", "")
         self._imap_port = int(os.getenv("EMAIL_IMAP_PORT", "993"))
@@ -298,7 +302,7 @@ class EmailAdapter(BasePlatformAdapter):
         try:
             # Test IMAP connection
             imap = imaplib.IMAP4_SSL(self._imap_host, self._imap_port, timeout=30)
-            imap.login(self._address, self._password)
+            imap.login(self._login_user, self._password)
             _send_imap_id(imap)
             # Mark all existing messages as seen so we only process new ones
             imap.select("INBOX")
@@ -318,7 +322,7 @@ class EmailAdapter(BasePlatformAdapter):
             # Test SMTP connection
             smtp = smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=30)
             smtp.starttls(context=ssl.create_default_context())
-            smtp.login(self._address, self._password)
+            smtp.login(self._login_user, self._password)
             smtp.quit()
             logger.info("[Email] SMTP connection test passed.")
         except Exception as e:
@@ -367,7 +371,7 @@ class EmailAdapter(BasePlatformAdapter):
         try:
             imap = imaplib.IMAP4_SSL(self._imap_host, self._imap_port, timeout=30)
             try:
-                imap.login(self._address, self._password)
+                imap.login(self._login_user, self._password)
                 _send_imap_id(imap)
                 imap.select("INBOX")
 
@@ -551,7 +555,7 @@ class EmailAdapter(BasePlatformAdapter):
         smtp = smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=30)
         try:
             smtp.starttls(context=ssl.create_default_context())
-            smtp.login(self._address, self._password)
+            smtp.login(self._login_user, self._password)
             smtp.send_message(msg)
         finally:
             try:
@@ -673,7 +677,7 @@ class EmailAdapter(BasePlatformAdapter):
         smtp = smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=30)
         try:
             smtp.starttls(context=ssl.create_default_context())
-            smtp.login(self._address, self._password)
+            smtp.login(self._login_user, self._password)
             smtp.send_message(msg)
         finally:
             try:
@@ -752,7 +756,7 @@ class EmailAdapter(BasePlatformAdapter):
         smtp = smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=30)
         try:
             smtp.starttls(context=ssl.create_default_context())
-            smtp.login(self._address, self._password)
+            smtp.login(self._login_user, self._password)
             smtp.send_message(msg)
         finally:
             try:
