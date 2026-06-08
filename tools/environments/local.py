@@ -7,6 +7,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -239,6 +240,17 @@ def _sanitize_subprocess_env(base_env: dict | None, extra_env: dict | None = Non
 def _find_bash() -> str:
     """Find bash for command execution."""
     if not _IS_WINDOWS:
+        # On macOS (Catalina+), zsh is the default shell.  Prefer $SHELL over
+        # the first `which bash` because bash 3.2 (still shipped as
+        # /bin/bash) silently swallows commands when run as a login shell
+        # with stdin=/dev/null — ``-l`` triggers ~/.bash_profile sourcing
+        # which may exec zsh or fail entirely.  See issue #42203.
+        if sys.platform == "darwin":
+            return (
+                os.environ.get("SHELL")
+                or shutil.which("bash")
+                or "/bin/zsh"
+            )
         return (
             shutil.which("bash")
             or ("/usr/bin/bash" if os.path.isfile("/usr/bin/bash") else None)
