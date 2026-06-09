@@ -10150,6 +10150,22 @@ def start_server(
             )
 
     print(f"  Hermes Web UI → http://{host}:{port}")
+
+    # Start MCP tool discovery in a background thread so MCP servers
+    # configured in config.yaml are discovered before the first tool
+    # snapshot.  Without this, Desktop/Dashboard mode (which enters via
+    # start_server → uvicorn.run) skips the gateway/CLI startup paths
+    # that normally spawn the discovery thread (issue #42694).
+    try:
+        from hermes_cli.mcp_startup import start_background_mcp_discovery
+        import logging as _mcp_logging
+        start_background_mcp_discovery(
+            logger=_mcp_logging.getLogger("hermes_cli.web_server"),
+            thread_name="dashboard-mcp-discovery",
+        )
+    except Exception:
+        _log.debug("MCP tool discovery failed at dashboard startup", exc_info=True)
+
     # proxy_headers defaults to False so _ws_client_is_allowed sees the real
     # connection peer rather than X-Forwarded-For's rewritten value (which
     # would defeat the loopback gate when behind a reverse proxy).  When the
