@@ -6786,7 +6786,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             adapter._pending_messages,
                             _quick_key,
                             event,
-                            merge_text=True,
+                            merge_text=False,
                         )
                 return None
 
@@ -6806,7 +6806,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         adapter._pending_messages,
                         _quick_key,
                         event,
-                        merge_text=True,
+                        merge_text=False,
                     )
                 return None
             if self._draining:

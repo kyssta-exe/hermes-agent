@@ -300,6 +300,8 @@ def build_turn_context(
                 if len(messages) >= _orig_len:
                     break  # Cannot compress further
                 conversation_history = None
+                # Defensive: ensure _last_flushed_db_idx is reset
+                agent._last_flushed_db_idx = 0
                 agent._empty_content_retries = 0
                 agent._thinking_prefill_retries = 0
                 agent._last_content_with_tools = None
