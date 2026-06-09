@@ -504,7 +504,7 @@ def _resolve_single_delivery_target(job: dict, deliver_value: str) -> Optional[d
                 "chat_id": str(origin["chat_id"]),
                 "thread_id": origin.get("thread_id"),
             }
-        # Origin missing (e.g. job created via API/script) — try each
+        # Origin missing (e.g. job created via API/script/CLI) — try each
         # platform's home channel as a fallback instead of silently dropping.
         for platform_name in _iter_home_target_platforms():
             chat_id = _get_home_target_chat_id(platform_name)
@@ -519,6 +519,10 @@ def _resolve_single_delivery_target(job: dict, deliver_value: str) -> Optional[d
                     "chat_id": chat_id,
                     "thread_id": _get_home_target_thread_id(platform_name),
                 }
+        # No origin and no home channels — treat as local (no delivery)
+        # instead of failing.  CLI-created jobs never have an origin, so
+        # failing here would make every CLI `deliver=origin` job produce a
+        # "no delivery target" error on every run (#43014).
         return None
 
     if ":" in deliver_value:
@@ -734,11 +738,21 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
     """
     targets = _resolve_delivery_targets(job)
     if not targets:
-        if job.get("deliver", "local") != "local":
-            msg = f"no delivery target resolved for deliver={job.get('deliver', 'local')}"
-            logger.warning("Job '%s': %s", job["id"], msg)
-            return msg
-        return None  # local-only jobs don't deliver — not a failure
+        deliver_value = _normalize_deliver_value(job.get("deliver", "local"))
+        if deliver_value == "local":
+            return None  # local-only jobs don't deliver — not a failure
+        # For "origin" with no origin and no home channels, treat as local
+        # rather than reporting an error.  CLI-created jobs never capture
+        # origin info, so this is the expected path (#43014).
+        if deliver_value == "origin":
+            logger.info(
+                "Job '%s': deliver=origin but no origin or home channels — skipping delivery",
+                job.get("name", job.get("id", "?")),
+            )
+            return None
+        msg = f"no delivery target resolved for deliver={deliver_value}"
+        logger.warning("Job '%s': %s", job["id"], msg)
+        return msg
 
     from tools.send_message_tool import _send_to_platform
     from gateway.config import load_gateway_config, Platform
