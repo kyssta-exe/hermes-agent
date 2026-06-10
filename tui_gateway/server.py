@@ -7220,6 +7220,14 @@ def _(rid, params: dict) -> dict:
                         "name": cmds[key].get("name", name),
                     },
                 )
+            # Skill is registered but payload failed to load — tell the
+            # user instead of falling through to the generic error. (#43053)
+            return _err(
+                rid,
+                4018,
+                f"skill '{cmds[key].get('name', name)}' found but could not load — "
+                "try /reload-skills or check ~/.hermes/skills/",
+            )
     except Exception:
         pass
 
