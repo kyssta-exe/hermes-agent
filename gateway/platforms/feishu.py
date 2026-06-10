@@ -454,7 +454,11 @@ def _sender_identity(sender: Any) -> frozenset:
 
 
 def _escape_markdown_text(text: str) -> str:
-    return _MARKDOWN_SPECIAL_CHARS_RE.sub(r"\\\1", text)
+    # Feishu's Markdown renderer expects raw Markdown — pre-escaping special
+    # characters (e.g. \# \* \| \_) breaks rendering by inserting literal
+    # backslashes.  Return text unchanged so Markdown reaches the renderer
+    # intact.  See #43437.
+    return text
 
 
 def _to_boolean(value: Any) -> bool:
