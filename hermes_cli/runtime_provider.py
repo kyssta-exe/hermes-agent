@@ -1580,6 +1580,9 @@ def resolve_runtime_provider(
         _bedrock_cfg = load_config().get("bedrock", {})
         # Region priority: config.yaml bedrock.region → env var → us-east-1
         region = (_bedrock_cfg.get("region") or "").strip() or resolve_bedrock_region()
+        # Profile priority: config.yaml bedrock.profile → AWS_PROFILE env var
+        from agent.bedrock_adapter import set_bedrock_profile
+        set_bedrock_profile((_bedrock_cfg.get("profile") or "").strip() or None)
         auth_source = resolve_aws_auth_env_var() or "aws-sdk-default-chain"
         # Build guardrail config if configured
         _gr = _bedrock_cfg.get("guardrail", {})

@@ -56,6 +56,25 @@ except Exception:
 
 _bedrock_runtime_client_cache: Dict[str, Any] = {}
 _bedrock_control_client_cache: Dict[str, Any] = {}
+_bedrock_profile: Optional[str] = None
+
+
+def set_bedrock_profile(profile: Optional[str] = None) -> None:
+    """Set the AWS profile name for all subsequent boto3 client creation.
+
+    Called by the runtime provider when ``bedrock.profile`` is configured
+    in ``config.yaml``.  When set, boto3 clients are created via a
+    ``boto3.Session(profile_name=…)`` instead of the default credential
+    chain, so the configured profile is respected without requiring
+    the ``AWS_PROFILE`` environment variable.
+    """
+    global _bedrock_profile
+    if profile and profile.strip():
+        _bedrock_profile = profile.strip()
+    else:
+        _bedrock_profile = None
+    # Flush cached clients so the new profile takes effect immediately.
+    reset_client_cache()
 
 
 def _require_boto3():
@@ -75,23 +94,38 @@ def _get_bedrock_runtime_client(region: str):
     """Get or create a cached ``bedrock-runtime`` client for the given region.
 
     Uses the default AWS credential chain (env vars → profile → instance role).
+    When ``bedrock.profile`` is set in config.yaml, uses a ``boto3.Session``
+    with that profile instead.
     """
-    if region not in _bedrock_runtime_client_cache:
+    cache_key = region
+    if _bedrock_profile:
+        cache_key = f"{region}:{_bedrock_profile}"
+    if cache_key not in _bedrock_runtime_client_cache:
         boto3 = _require_boto3()
-        _bedrock_runtime_client_cache[region] = boto3.client(
-            "bedrock-runtime", region_name=region,
-        )
-    return _bedrock_runtime_client_cache[region]
-
+        if _bedrock_profile:
+            session = boto3.Session(profile_name=_bedrock_profile, region_name=region)
+            _bedrock_runtime_client_cache[cache_key] = session.client("bedrock-runtime")
+        else:
+            _bedrock_runtime_client_cache[cache_key] = boto3.client(
+                "bedrock-runtime", region_name=region,
+            )
+    return _bedrock_runtime_client_cache[cache_key]
 
 def _get_bedrock_control_client(region: str):
     """Get or create a cached ``bedrock`` control-plane client for model discovery."""
-    if region not in _bedrock_control_client_cache:
+    cache_key = region
+    if _bedrock_profile:
+        cache_key = f"{region}:{_bedrock_profile}"
+    if cache_key not in _bedrock_control_client_cache:
         boto3 = _require_boto3()
-        _bedrock_control_client_cache[region] = boto3.client(
-            "bedrock", region_name=region,
-        )
-    return _bedrock_control_client_cache[region]
+        if _bedrock_profile:
+            session = boto3.Session(profile_name=_bedrock_profile, region_name=region)
+            _bedrock_control_client_cache[cache_key] = session.client("bedrock")
+        else:
+            _bedrock_control_client_cache[cache_key] = boto3.client(
+                "bedrock", region_name=region,
+            )
+    return _bedrock_control_client_cache[cache_key]
 
 
 def reset_client_cache():
@@ -111,8 +145,11 @@ def invalidate_runtime_client(region: str) -> bool:
     Returns True if a cached entry was evicted, False if the region was not
     cached.
     """
-    existed = region in _bedrock_runtime_client_cache
-    _bedrock_runtime_client_cache.pop(region, None)
+    cache_key = region
+    if _bedrock_profile:
+        cache_key = f"{region}:{_bedrock_profile}"
+    existed = cache_key in _bedrock_runtime_client_cache
+    _bedrock_runtime_client_cache.pop(cache_key, None)
     return existed
 
 
