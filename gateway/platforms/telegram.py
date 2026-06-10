@@ -2348,10 +2348,14 @@ class TelegramAdapter(BasePlatformAdapter):
                     )
                 except Exception as fmt_err:
                     if "not modified" not in str(fmt_err).lower():
+                        # MarkdownV2 parse failed — strip formatting markers
+                        # and send as plain text so the user sees clean
+                        # unformatted content instead of raw **bold** syntax.
+                        _plain = _strip_mdv2(first_chunk) if first_chunk else first_chunk
                         await self._bot.edit_message_text(
                             chat_id=int(chat_id),
                             message_id=int(message_id),
-                            text=first_chunk,
+                            text=_plain,
                         )
             else:
                 await self._bot.edit_message_text(
@@ -2416,9 +2420,13 @@ class TelegramAdapter(BasePlatformAdapter):
                             )
                         )
                         try:
+                            # Strip MarkdownV2 formatting so the user
+                            # sees clean plain text rather than raw
+                            # **bold** / ```code``` markers.
+                            _fallback_text = _strip_mdv2(chunk) if use_markdown and chunk else chunk
                             sent_msg = await self._bot.send_message(
                                 chat_id=int(chat_id),
-                                text=chunk,
+                                text=_fallback_text,
                                 **retry_thread_kwargs,
                                 **self._link_preview_kwargs(),
                                 **self._notification_kwargs(metadata),
