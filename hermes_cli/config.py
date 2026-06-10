@@ -589,7 +589,7 @@ def get_container_exec_info() -> Optional[dict]:
 # =============================================================================
 
 # Re-export from hermes_constants — canonical definition lives there.
-from hermes_constants import get_hermes_home  # noqa: F811,E402
+from hermes_constants import get_hermes_home, get_default_hermes_root  # noqa: F811,E402
 from utils import atomic_replace
 
 def get_config_path() -> Path:
@@ -5332,6 +5332,23 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
             return copy.deepcopy(cached[2]) if want_deepcopy else cached[2]
 
         config = copy.deepcopy(DEFAULT_CONFIG)
+
+        # When running in a profile context (HERMES_HOME points to a
+        # profile directory), load the root user's config as a base so
+        # that profile configs inherit root-level providers, credentials,
+        # and other settings instead of starting from empty defaults.
+        # See https://github.com/NousResearch/hermes-agent/issues/43713
+        try:
+            root_home = get_default_hermes_root()
+            cur_home = get_hermes_home()
+            if root_home != cur_home:
+                root_config_path = root_home / "config.yaml"
+                if root_config_path.exists():
+                    with open(root_config_path, encoding="utf-8") as rf:
+                        root_config = yaml.safe_load(rf) or {}
+                    config = _deep_merge(config, root_config)
+        except Exception:
+            pass  # non-fatal — fall back to DEFAULT_CONFIG only
 
         if cache_key is not None:
             try:
