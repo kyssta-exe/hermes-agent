@@ -1698,6 +1698,9 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
     # poll loop uses this to detect stale connections that keep receiving
     # SSE keep-alive pings but no actual data.
     last_chunk_time = {"t": time.time()}
+    # Track consecutive stale stream kills.  When this exceeds a threshold,
+    # trigger runtime fallback instead of retrying the same provider.
+    _stale_kill_count = {"n": 0}
 
     def _fire_first_delta():
         if not first_delta_fired["done"] and on_first_delta:
@@ -2468,11 +2471,13 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
         _stale_elapsed = time.time() - last_chunk_time["t"]
         if _stale_elapsed > _stream_stale_timeout:
             _est_ctx = estimate_request_context_tokens(api_kwargs)
+            _stale_kill_count["n"] += 1
             logger.warning(
                 "Stream stale for %.0fs (threshold %.0fs) — no chunks received. "
-                "model=%s context=~%s tokens. Killing connection.",
+                "model=%s context=~%s tokens. Killing connection. (stale kill #%d)",
                 _stale_elapsed, _stream_stale_timeout,
                 api_kwargs.get("model", "unknown"), f"{_est_ctx:,}",
+                _stale_kill_count["n"],
             )
             agent._buffer_status(
                 f"⚠️ No response from provider for {int(_stale_elapsed)}s "
@@ -2490,6 +2495,28 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 agent._replace_primary_openai_client(reason="stale_stream_pool_cleanup")
             except Exception:
                 pass
+            # After multiple consecutive stale kills, the provider is
+            # likely down — trigger runtime fallback instead of retrying
+            # the same provider again.  (#43211)
+            _MAX_STALE_KILLS_BEFORE_FALLBACK = 2
+            if (
+                _stale_kill_count["n"] >= _MAX_STALE_KILLS_BEFORE_FALLBACK
+                and hasattr(agent, "_try_activate_fallback")
+                and callable(getattr(agent, "_try_activate_fallback", None))
+            ):
+                _fallback_result = agent._try_activate_fallback()
+                if _fallback_result:
+                    logger.warning(
+                        "Stale stream kill #%d triggered fallback to %s/%s",
+                        _stale_kill_count["n"],
+                        getattr(agent, "provider", "?"),
+                        getattr(agent, "model", "?"),
+                    )
+                    agent._buffer_status(
+                        f"⚠️ Provider unresponsive after {_stale_kill_count['n']} "
+                        f"attempts. Switching to fallback: "
+                        f"{getattr(agent, 'model', '?')}"
+                    )
             # Reset the timer so we don't kill repeatedly while
             # the inner thread processes the closure.
             last_chunk_time["t"] = time.time()
