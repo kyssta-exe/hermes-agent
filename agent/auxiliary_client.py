@@ -4142,6 +4142,11 @@ def resolve_vision_provider_client(
     requested, resolved_model, resolved_base_url, resolved_api_key, resolved_api_mode = _resolve_task_provider_model(
         "vision", provider, model, base_url, api_key
     )
+    # Preserve the raw value before normalization: "custom:<name>" must
+    # reach resolve_provider_client as-is so its named-custom-provider
+    # lookup can match the config entry instead of collapsing to a
+    # built-in provider that shares the same bare name (#44349).
+    raw_requested = (requested or "").strip().lower()
     requested = _normalize_vision_provider(requested)
 
     def _finalize(resolved_provider: str, sync_client: Any, default_model: Optional[str]):
@@ -4283,12 +4288,22 @@ def resolve_vision_provider_client(
             return requested, None, None
         return requested, client, final_model
 
-    client, final_model = _get_cached_client(requested, resolved_model, async_mode,
+    if raw_requested.startswith("custom:"):
+        # User explicitly requested a named custom provider.  Pass the
+        # original ``custom:<name>`` string through to the resolution
+        # chain so resolve_provider_client's named-custom-provider
+        # lookup can match the config entry instead of falling through
+        # to a built-in that shares the same bare name (#44349).
+        resolution_requested = raw_requested
+    else:
+        resolution_requested = requested
+
+    client, final_model = _get_cached_client(resolution_requested, resolved_model, async_mode,
                                              api_mode=resolved_api_mode,
                                              is_vision=True)
     if client is None:
-        return requested, None, None
-    return requested, client, final_model
+        return resolution_requested, None, None
+    return resolution_requested, client, final_model
 
 
 def get_auxiliary_extra_body() -> dict:
