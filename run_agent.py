@@ -1466,6 +1466,12 @@ class AIAgent:
         history. When an override is configured for the active turn, mutate the
         in-memory messages list in place so both persistence and returned
         history stay clean.
+
+        When the original content is a list (multimodal content blocks, e.g.
+        images) and the override is a string, merge the override text with the
+        existing non-text content blocks instead of clobbering them.  This
+        prevents image content blocks from being silently dropped.  Fix for
+        #44242.
         """
         idx = getattr(self, "_persist_user_message_idx", None)
         override = getattr(self, "_persist_user_message_override", None)
@@ -1474,7 +1480,24 @@ class AIAgent:
         if 0 <= idx < len(messages):
             msg = messages[idx]
             if isinstance(msg, dict) and msg.get("role") == "user":
-                msg["content"] = override
+                original_content = msg.get("content")
+                # When original content is a list (multimodal) and override
+                # is a plain string, merge rather than clobber so image/audio
+                # content blocks survive persistence.
+                if isinstance(original_content, list) and isinstance(override, str):
+                    merged: list[dict] = []
+                    text_replaced = False
+                    for block in original_content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            merged.append({"type": "text", "text": override})
+                            text_replaced = True
+                        else:
+                            merged.append(block)
+                    if not text_replaced:
+                        merged.insert(0, {"type": "text", "text": override})
+                    msg["content"] = merged
+                else:
+                    msg["content"] = override
 
     def _persist_session(self, messages: List[Dict], conversation_history: List[Dict] = None):
         """Save session state to both JSON log and SQLite on any exit path.

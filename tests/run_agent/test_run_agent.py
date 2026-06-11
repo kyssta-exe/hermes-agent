@@ -6179,6 +6179,61 @@ class TestPersistUserMessageOverride:
         first_db_write = agent._session_db.append_message.call_args_list[0].kwargs
         assert first_db_write["content"] == "Hello there"
 
+    def test_persist_session_preserves_image_blocks(self, agent):
+        """Multimodal content blocks must survive the persist override (fixes #44242)."""
+        agent._session_db = MagicMock()
+        agent.session_id = "session-123"
+        agent._last_flushed_db_idx = 0
+        agent._persist_user_message_idx = 0
+        agent._persist_user_message_override = "Describe this image"
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Describe this image"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc123"}},
+                ],
+            },
+            {"role": "assistant", "content": "I see a cat."},
+        ]
+
+        agent._persist_session(messages, [])
+
+        # The override text should replace the text block, but image blocks
+        # must be preserved.
+        content = messages[0]["content"]
+        assert isinstance(content, list), "Content must remain a list"
+        text_blocks = [b for b in content if isinstance(b, dict) and b.get("type") == "text"]
+        image_blocks = [b for b in content if isinstance(b, dict) and b.get("type") == "image_url"]
+        assert len(text_blocks) == 1
+        assert text_blocks[0]["text"] == "Describe this image"
+        assert len(image_blocks) == 1, "Image block must survive persist override"
+
+    def test_persist_session_preserves_image_blocks_no_text(self, agent):
+        """Multimodal with no text block gets override prepended (fixes #44242)."""
+        agent._session_db = MagicMock()
+        agent.session_id = "session-123"
+        agent._last_flushed_db_idx = 0
+        agent._persist_user_message_idx = 0
+        agent._persist_user_message_override = "Analyze this"
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc123"}},
+                ],
+            },
+            {"role": "assistant", "content": "I see a cat."},
+        ]
+
+        agent._persist_session(messages, [])
+
+        content = messages[0]["content"]
+        assert isinstance(content, list), "Content must remain a list"
+        assert content[0]["type"] == "text"
+        assert content[0]["text"] == "Analyze this"
+        assert content[1]["type"] == "image_url"
+
 
 class TestReasoningReplayForStrictProviders:
     """Assistant replay must preserve provider-native reasoning fields."""
