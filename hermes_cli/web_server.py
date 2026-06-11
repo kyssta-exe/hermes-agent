@@ -6088,7 +6088,11 @@ async def delete_session_endpoint(session_id: str, profile: Optional[str] = None
     # desktop routes their DELETE to the remote backend. Omit for current/default.
     db = _open_session_db_for_profile(profile)
     try:
-        if not db.delete_session(session_id):
+        # Resolve prefix/alias IDs the same way GET and PATCH do, so
+        # compression-root IDs and short prefixes work for delete too.
+        resolved = db.resolve_session_id(session_id)
+        target = resolved or session_id
+        if not db.delete_session(target):
             raise HTTPException(status_code=404, detail="Session not found")
         return {"ok": True}
     finally:

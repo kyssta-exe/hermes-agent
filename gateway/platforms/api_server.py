@@ -1467,7 +1467,11 @@ class APIServerAdapter(BasePlatformAdapter):
         if err:
             return err
         db = self._ensure_session_db()
-        deleted = db.delete_session(session_id)
+        # Resolve prefix/alias IDs the same way GET and PATCH do, so
+        # compression-root IDs and short prefixes work for delete too.
+        resolved = db.resolve_session_id(session_id)
+        target = resolved or session_id
+        deleted = db.delete_session(target)
         return web.json_response({"object": "hermes.session.deleted", "id": session_id, "deleted": bool(deleted)})
 
     async def _handle_session_messages(self, request: "web.Request") -> "web.Response":
