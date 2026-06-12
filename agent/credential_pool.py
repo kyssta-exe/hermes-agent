@@ -1312,6 +1312,19 @@ class CredentialPool:
             if entry.last_status == STATUS_EXHAUSTED:
                 exhausted_until = _exhausted_until(entry)
                 if exhausted_until is not None and now < exhausted_until:
+                    # For OAuth providers (esp. openai-codex), still refresh
+                    # the token during cooldown to prevent the refresh chain
+                    # from expiring.  A long cooldown (e.g. weekly ChatGPT
+                    # quota) can outlive the OAuth session; if the refresh
+                    # token isn't rotated, the credential is permanently
+                    # dead when the cooldown finally expires.
+                    if (refresh
+                            and self._entry_needs_refresh(entry)
+                            and entry.auth_type == AUTH_TYPE_OAUTH
+                            and entry.refresh_token):
+                        refreshed = self._refresh_entry(entry, force=False)
+                        if refreshed is not None:
+                            entry = refreshed
                     continue
                 if clear_expired:
                     cleared = replace(
