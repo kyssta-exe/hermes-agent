@@ -569,6 +569,15 @@ def sync_skills(quiet: bool = False) -> dict:
                 try:
                     # Move old copy to a backup so we can restore on failure
                     backup = dest.with_suffix(".bak")
+                    # Clean stale .bak from a previous failed update — without
+                    # this, shutil.move() would place the live skill *inside*
+                    # the stale directory instead of replacing it, and a
+                    # subsequent copytree failure would restore stale junk.
+                    if backup.exists():
+                        try:
+                            _rmtree_writable(backup)
+                        except (OSError, IOError):
+                            logger.debug("Could not remove stale backup %s", backup, exc_info=True)
                     shutil.move(str(dest), str(backup))
                     try:
                         shutil.copytree(skill_src, dest)
