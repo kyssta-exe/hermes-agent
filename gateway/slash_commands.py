@@ -2494,8 +2494,12 @@ class GatewaySlashCommandsMixin:
                     self._sync_telegram_topic_binding(
                         source, session_entry, reason="compress-command",
                     )
-
-                self.session_store.rewrite_transcript(new_session_id, compressed)
+                    # Only rewrite transcript when rotation actually happened.
+                    # When _session_db is None or rotation failed, no new session
+                    # was created — calling rewrite_transcript() would unconditionally
+                    # overwrite the original session with compressed content, destroying
+                    # the full conversation history (#44794).
+                    self.session_store.rewrite_transcript(new_session_id, compressed)
                 # Reset stored token count — transcript changed, old value is stale
                 self.session_store.update_session(
                     session_entry.session_key, last_prompt_tokens=0
