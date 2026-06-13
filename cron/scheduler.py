@@ -434,6 +434,13 @@ def _resolve_single_delivery_target(job: dict, deliver_value: str) -> Optional[d
 
     if deliver_value == "origin":
         if origin:
+            # WebUI and Desktop read cron sessions directly from the local
+            # session DB — no external platform delivery is needed.  Treat
+            # them as "local" delivery to avoid routing through gateway
+            # platform adapters which would record "unknown platform" errors.
+            _origin_platform = origin["platform"].lower()
+            if _origin_platform in ("webui", "desktop", "cli"):
+                return None
             return {
                 "platform": origin["platform"],
                 "chat_id": str(origin["chat_id"]),
@@ -1894,7 +1901,7 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
     except Exception as e:
         error_msg = f"{type(e).__name__}: {str(e)}"
         logger.exception("Job '%s' failed: %s", job_name, error_msg)
-        
+
         output = f"""# Cron Job: {job_name} (FAILED)
 
 **Job ID:** {job_id}
@@ -1911,6 +1918,32 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
 {error_msg}
 ```
 """
+        # If the cron session exists but has no assistant message yet
+        # (agent failed before producing a response), append a concise
+        # failure message so WebUI/Desktop show a readable transcript
+        # instead of a prompt-only chat. (#45360)
+        if _session_db:
+            try:
+                _msgs = _session_db.get_messages(_cron_session_id)
+                _has_assistant = any(
+                    m.get("role") == "assistant" for m in _msgs
+                )
+                if not _has_assistant:
+                    _session_db.append_message(
+                        _cron_session_id,
+                        role="assistant",
+                        content=(
+                            f"**Cron job failed:** {error_msg}\n\n"
+                            "Check the scheduler logs for details."
+                        ),
+                        finish_reason="error",
+                    )
+            except Exception as _sess_exc:
+                logger.debug(
+                    "Job '%s': failed to append assistant failure message to session: %s",
+                    job_id, _sess_exc,
+                )
+
         return False, output, "", error_msg
 
     finally:
