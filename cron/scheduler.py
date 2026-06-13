@@ -1654,6 +1654,7 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
             # example DeepSeek) for cron jobs that do not pin provider/model.
             runtime_kwargs = {
                 "requested": job.get("provider"),
+                "target_model": model or None,
             }
             if job.get("base_url"):
                 runtime_kwargs["explicit_base_url"] = job.get("base_url")
