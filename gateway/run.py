@@ -2058,6 +2058,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         self._running_agents: Dict[str, Any] = {}
         self._running_agents_ts: Dict[str, float] = {}  # start timestamp per session
         self._active_session_leases: Dict[str, Any] = {}
+        # Gate set during startup auto-resume.  While True, inbound
+        # (non-internal) messages are queued in the adapter's pending
+        # queue so they don't race with the auto-resume tasks that are
+        # restoring restart-interrupted sessions.  Cleared once all
+        # startup auto-resume tasks have completed (#45682).
+        self._startup_auto_resuming: bool = False
         self._pending_messages: Dict[str, str] = {}  # Queued messages during interrupt
         # Last successfully-resolved (non-empty) model, keyed by session. Used
         # as a fallback when a fresh config read transiently returns an empty
@@ -4495,7 +4501,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         {"restart_timeout", "shutdown_timeout", "restart_interrupted"}
     )
 
-    def _schedule_resume_pending_sessions(self, platform=None) -> int:
+    def _schedule_resume_pending_sessions(self, platform=None) -> tuple:
         """Auto-continue fresh restart-interrupted sessions after startup.
 
         ``resume_pending`` already preserves the transcript AND the existing
@@ -4532,10 +4538,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 ]
         except Exception as exc:
             logger.warning("Failed to enumerate resume-pending sessions: %s", exc)
-            return 0
+            return 0, []
 
+        tasks: list = []
         now = datetime.now()
-        scheduled = 0
+        scheduled: int = 0
         for entry in candidates:
             marker = entry.last_resume_marked_at or entry.updated_at
             if marker is not None and (now - marker).total_seconds() > window:
@@ -4568,6 +4575,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             task = asyncio.create_task(adapter.handle_message(event))
             self._background_tasks.add(task)
             task.add_done_callback(self._background_tasks.discard)
+            tasks.append(task)
             scheduled += 1
 
         if scheduled:
@@ -4575,7 +4583,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "Scheduled auto-resume for %d restart-interrupted session(s)",
                 scheduled,
             )
-        return scheduled
+        return scheduled, tasks
 
     async def start(self) -> bool:
         """
@@ -5073,7 +5081,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # previous gateway restart/shutdown.  The resume_pending flag is cleared
         # by the normal successful-turn path, so a failed auto-resume remains
         # visible for manual recovery on the next user message.
-        self._schedule_resume_pending_sessions()
+        self._startup_auto_resuming = True
+        _ar_scheduled, _ar_tasks = self._schedule_resume_pending_sessions()
+        if _ar_tasks:
+            try:
+                await asyncio.gather(*_ar_tasks, return_exceptions=True)
+            except Exception as _ar_exc:
+                logger.debug("startup auto-resume gather failed: %s", _ar_exc)
+        self._startup_auto_resuming = False
 
         # Drain any recovered process watchers (from crash recovery checkpoint)
         try:
@@ -5628,7 +5643,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         # auto-resume scoped to this platform so recovery
                         # doesn't silently wait for a manual user message.
                         try:
-                            self._schedule_resume_pending_sessions(platform=platform)
+                            self._schedule_resume_pending_sessions(platform=platform)  # noqa: returns (count, tasks), reconnect fire-and-forget
                         except Exception:
                             logger.debug(
                                 "resume-pending reschedule after %s reconnect failed",
@@ -6379,6 +6394,26 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Internal events (e.g. background-process completion notifications)
         # are system-generated and must skip user authorization.
         is_internal = bool(getattr(event, "internal", False))
+
+        # During startup auto-resume, queue inbound user messages so they
+        # don't race with the auto-resume tasks restoring interrupted
+        # sessions (#45682).  Internal events (the auto-resume triggers
+        # themselves) bypass this gate.
+        if self._startup_auto_resuming and not is_internal:
+            adapter = self.adapters.get(source.platform)
+            if adapter:
+                _gate_key = self._session_key_for_source(source)
+                merge_pending_message_event(
+                    adapter._pending_messages,
+                    _gate_key,
+                    event,
+                    merge_text=True,
+                )
+                logger.debug(
+                    "Startup auto-resume gate: queued inbound message for %s",
+                    _gate_key,
+                )
+            return None
 
         # Fire pre_gateway_dispatch plugin hook for user-originated messages.
         # Plugins receive the MessageEvent and may return a dict influencing flow:

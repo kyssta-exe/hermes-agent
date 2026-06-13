@@ -883,7 +883,7 @@ async def test_startup_auto_resume_schedules_fresh_pending_sessions():
     runner.session_store._entries = {pending_entry.session_key: pending_entry}
     adapter.handle_message = AsyncMock()
 
-    scheduled = runner._schedule_resume_pending_sessions()
+    scheduled, _tasks = runner._schedule_resume_pending_sessions()
     await asyncio.sleep(0)
 
     assert scheduled == 1
@@ -925,7 +925,7 @@ async def test_startup_auto_resume_includes_crash_recovery():
     runner.session_store._entries = {pending_entry.session_key: pending_entry}
     adapter.handle_message = AsyncMock()
 
-    scheduled = runner._schedule_resume_pending_sessions()
+    scheduled, _tasks = runner._schedule_resume_pending_sessions()
     await asyncio.sleep(0)
 
     assert scheduled == 1
@@ -955,7 +955,7 @@ async def test_startup_auto_resume_skips_stale_entries():
     runner.session_store._entries = {stale_entry.session_key: stale_entry}
     adapter.handle_message = AsyncMock()
 
-    scheduled = runner._schedule_resume_pending_sessions()
+    scheduled, _tasks = runner._schedule_resume_pending_sessions()
 
     assert scheduled == 0
     adapter.handle_message.assert_not_called()
@@ -997,7 +997,7 @@ async def test_startup_auto_resume_skips_suspended_and_originless():
     }
     adapter.handle_message = AsyncMock()
 
-    scheduled = runner._schedule_resume_pending_sessions()
+    scheduled, _tasks = runner._schedule_resume_pending_sessions()
 
     assert scheduled == 0
     adapter.handle_message.assert_not_called()
@@ -1028,7 +1028,7 @@ async def test_startup_auto_resume_skips_disallowed_reasons():
     runner.session_store._entries = {other_entry.session_key: other_entry}
     adapter.handle_message = AsyncMock()
 
-    scheduled = runner._schedule_resume_pending_sessions()
+    scheduled, _tasks = runner._schedule_resume_pending_sessions()
 
     assert scheduled == 0
     adapter.handle_message.assert_not_called()
@@ -1054,7 +1054,7 @@ async def test_startup_auto_resume_skips_when_adapter_unavailable():
     runner.adapters = {}
     adapter.handle_message = AsyncMock()
 
-    scheduled = runner._schedule_resume_pending_sessions()
+    scheduled, _tasks = runner._schedule_resume_pending_sessions()
 
     assert scheduled == 0
     adapter.handle_message.assert_not_called()
@@ -1090,12 +1090,12 @@ async def test_reconnect_reschedules_pending_after_late_platform_connect():
 
     # Platform was not connected at gateway startup → session skipped.
     runner.adapters = {}
-    assert runner._schedule_resume_pending_sessions() == 0
+    assert runner._schedule_resume_pending_sessions() == (0, [])
     adapter.handle_message.assert_not_called()
 
     # Platform reconnects → its pending session is retried.
     runner.adapters = {Platform.TELEGRAM: adapter}
-    scheduled = runner._schedule_resume_pending_sessions(platform=Platform.TELEGRAM)
+    scheduled, _tasks = runner._schedule_resume_pending_sessions(platform=Platform.TELEGRAM)
     await asyncio.sleep(0)
 
     assert scheduled == 1
@@ -1148,7 +1148,7 @@ async def test_reconnect_reschedule_is_platform_scoped():
     adapter.handle_message = AsyncMock()
     runner.adapters = {Platform.TELEGRAM: adapter}
 
-    scheduled = runner._schedule_resume_pending_sessions(platform=Platform.TELEGRAM)
+    scheduled, _tasks = runner._schedule_resume_pending_sessions(platform=Platform.TELEGRAM)
     await asyncio.sleep(0)
 
     # Only the telegram session is resumed; the discord session waits for its
@@ -1182,7 +1182,7 @@ async def test_auto_resume_skips_sessions_with_running_agent():
     runner._running_agents = {pending_entry.session_key: object()}
     adapter.handle_message = AsyncMock()
 
-    scheduled = runner._schedule_resume_pending_sessions(platform=Platform.TELEGRAM)
+    scheduled, _tasks = runner._schedule_resume_pending_sessions(platform=Platform.TELEGRAM)
 
     assert scheduled == 0
     adapter.handle_message.assert_not_called()
