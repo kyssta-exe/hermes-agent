@@ -27,7 +27,7 @@ class StubAdapter(BasePlatformAdapter):
         self._fatal_error = fatal_error
         self._fatal_retryable = fatal_retryable
 
-    async def connect(self):
+    async def connect(self, **kwargs):
         if self._fatal_error:
             self._set_fatal_error("test_error", self._fatal_error, retryable=self._fatal_retryable)
             return False

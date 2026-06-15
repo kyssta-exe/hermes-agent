@@ -2289,10 +2289,14 @@ class BasePlatformAdapter(ABC):
         self._session_store = session_store
     
     @abstractmethod
-    async def connect(self) -> bool:
+    async def connect(self, **kwargs) -> bool:
         """
         Connect to the platform and start receiving messages.
-        
+
+        Subclasses may accept additional keyword arguments (e.g.
+        ``drop_pending_updates`` for Telegram) that callers can pass through
+        via ``_connect_adapter_with_timeout``.
+
         Returns True if connection was successful.
         """
         pass

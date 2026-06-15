@@ -1852,13 +1852,20 @@ class TelegramAdapter(BasePlatformAdapter):
                             self.name, topic_name, seed_err,
                         )
 
-    async def connect(self) -> bool:
+    async def connect(self, drop_pending_updates: bool = True) -> bool:
         """Connect to Telegram via polling or webhook.
 
         By default, uses long polling (outbound connection to Telegram).
         If ``TELEGRAM_WEBHOOK_URL`` is set, starts an HTTP webhook server
         instead.  Webhook mode is useful for cloud deployments (Fly.io,
         Railway) where inbound HTTP can wake a suspended machine.
+
+        Args:
+            drop_pending_updates: If True (default for initial gateway start),
+                discard any updates queued on Telegram's servers. Set to False
+                for reconnect paths (e.g. after a prolonged outage) so that
+                user messages sent while the bot was offline are not silently
+                lost.
 
         Env vars for webhook mode::
 
@@ -2049,7 +2056,7 @@ class TelegramAdapter(BasePlatformAdapter):
                     webhook_url=webhook_url,
                     secret_token=webhook_secret,
                     allowed_updates=Update.ALL_TYPES,
-                    drop_pending_updates=True,
+                    drop_pending_updates=drop_pending_updates,
                 )
                 self._webhook_mode = True
                 logger.info(
@@ -2082,7 +2089,7 @@ class TelegramAdapter(BasePlatformAdapter):
 
                 await self._app.updater.start_polling(
                     allowed_updates=Update.ALL_TYPES,
-                    drop_pending_updates=True,
+                    drop_pending_updates=drop_pending_updates,
                     error_callback=_polling_error_callback,
                 )
             

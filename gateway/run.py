@@ -2626,13 +2626,30 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 return max(0.0, timeout)
         return _PLATFORM_CONNECT_TIMEOUT_SECS_DEFAULT
 
-    async def _connect_adapter_with_timeout(self, adapter, platform) -> bool:
-        """Connect an adapter without allowing one platform to block others."""
+    async def _connect_adapter_with_timeout(self, adapter, platform, **connect_kwargs) -> bool:
+        """Connect an adapter without allowing one platform to block others.
+
+        Any extra keyword arguments are forwarded to ``adapter.connect()`` so
+        callers can, for example, pass ``drop_pending_updates=False`` during
+        reconnect attempts.  Adapters that do not accept the given kwargs
+        will receive an empty call (kwargs are silently dropped).
+        """
         timeout = self._platform_connect_timeout_secs()
-        if timeout <= 0:
-            return await adapter.connect()
+        # Only forward kwargs that the adapter's connect() actually accepts.
+        import inspect
         try:
-            return await asyncio.wait_for(adapter.connect(), timeout=timeout)
+            sig = inspect.signature(adapter.connect)
+            accepted = set(sig.parameters.keys()) | {
+                name for name, p in sig.parameters.items()
+                if p.kind == inspect.Parameter.VAR_KEYWORD
+            }
+            filtered = {k: v for k, v in connect_kwargs.items() if k in accepted}
+        except (ValueError, TypeError):
+            filtered = {}
+        if timeout <= 0:
+            return await adapter.connect(**filtered)
+        try:
+            return await asyncio.wait_for(adapter.connect(**filtered), timeout=timeout)
         except asyncio.TimeoutError as exc:
             raise TimeoutError(
                 f"{platform.value} connect timed out after {timeout:g}s"
@@ -5830,7 +5847,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     adapter.set_topic_recovery_fn(self._recover_telegram_topic_thread_id)
                     adapter._busy_text_mode = self._busy_text_mode
 
-                    success = await self._connect_adapter_with_timeout(adapter, platform)
+                    # Reconnect after a prolonged outage: preserve Telegram's
+                    # server-side update queue so user messages sent while the
+                    # bot was offline are delivered rather than silently dropped.
+                    success = await self._connect_adapter_with_timeout(
+                        adapter, platform, drop_pending_updates=False,
+                    )
                     if success:
                         self.adapters[platform] = adapter
                         self._sync_voice_mode_state_to_adapter(adapter)
