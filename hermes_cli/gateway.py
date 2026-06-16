@@ -318,6 +318,10 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
     # gateway.  See #13242.
     exclude_pids = exclude_pids | _get_ancestor_pids()
     pids: list[int] = []
+    # Subcommands that are NOT gateways but share the same process prefix
+    # (e.g. ``hermes --profile foo dashboard``).  Commands matching any of
+    # these strings are excluded from the candidate list.
+    _non_gateway_subcommands = ("dashboard", "serve")
     patterns = [
         "hermes_cli.main gateway",
         "hermes_cli.main --profile",
@@ -432,7 +436,7 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
                     current_cmd_lc = current_cmd.lower()
                     if any(p in current_cmd_lc for p in patterns) and (
                         all_profiles or _matches_current_profile(current_cmd)
-                    ):
+                    ) and not any(ns in current_cmd_lc for ns in _non_gateway_subcommands):
                         try:
                             _append_unique_pid(pids, int(pid_str), exclude_pids)
                         except ValueError:
@@ -458,7 +462,7 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
                             cmdline_lc = cmdline.lower()
                             if any(p in cmdline_lc for p in patterns) and (
                                 all_profiles or _matches_current_profile(cmdline)
-                            ):
+                            ) and not any(ns in cmdline_lc for ns in _non_gateway_subcommands):
                                 _append_unique_pid(pids, pid, exclude_pids)
                         except (OSError, PermissionError):
                             continue
@@ -502,7 +506,7 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
                     command_lc = command.lower()
                     if any(pattern in command_lc for pattern in patterns) and (
                         all_profiles or _matches_current_profile(command)
-                    ):
+                    ) and not any(ns in command_lc for ns in _non_gateway_subcommands):
                         _append_unique_pid(pids, pid, exclude_pids)
     except (OSError, subprocess.TimeoutExpired):
         return []
