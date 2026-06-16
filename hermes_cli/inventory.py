@@ -181,6 +181,12 @@ def build_models_payload(
                 slug = row.get("slug", "")
                 if not _is_aggregator(slug):
                     continue
+                # Don't filter user-defined custom providers — they are the
+                # "more-specific" providers the dedup is meant to protect.
+                # Only built-in aggregators (e.g. openrouter) should have
+                # overlapping models removed.  (#47042)
+                if row.get("is_user_defined"):
+                    continue
                 original = row.get("models") or []
                 filtered = [m for m in original if m.lower() not in user_models]
                 if len(filtered) < len(original):
