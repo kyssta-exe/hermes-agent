@@ -1999,6 +1999,8 @@ def _reset_session_agent(sid: str, session: dict) -> dict:
 def _make_agent(sid: str, key: str, session_id: str | None = None):
     from run_agent import AIAgent
     from hermes_cli.runtime_provider import resolve_runtime_provider
+    from hermes_cli.auth import AuthError
+    from hermes_cli.fallback_config import get_fallback_chain
 
     cfg = _load_cfg()
     agent_cfg = cfg.get("agent") or {}
@@ -2018,10 +2020,31 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
                 part for part in (system_prompt, skills_prompt) if part
             ).strip()
     model, requested_provider = _resolve_startup_runtime()
-    runtime = resolve_runtime_provider(
-        requested=requested_provider,
-        target_model=model or None,
-    )
+    try:
+        runtime = resolve_runtime_provider(
+            requested=requested_provider,
+            target_model=model or None,
+        )
+    except AuthError as primary_exc:
+        # Init-time fallback: walk the fallback chain (same pattern as the
+        # cron scheduler and the CLI).  See #47627.
+        runtime = None
+        for entry in get_fallback_chain(cfg):
+            fb_provider = entry.get("provider")
+            fb_model = entry.get("model")
+            if not fb_provider or not fb_model:
+                continue
+            try:
+                runtime = resolve_runtime_provider(
+                    requested=fb_provider,
+                    target_model=fb_model,
+                )
+                model, requested_provider = fb_model, fb_provider
+                break
+            except Exception:
+                continue
+        if runtime is None:
+            raise  # preserve existing "agent init failed: ..." behavior
     return AIAgent(
         model=model,
         max_iterations=_cfg_max_turns(cfg, 90),
