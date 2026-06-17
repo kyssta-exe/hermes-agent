@@ -24,7 +24,13 @@ class AnthropicProfile(ProviderProfile):
             return None
         try:
             req = urllib.request.Request("https://api.anthropic.com/v1/models")
-            req.add_header("x-api-key", api_key)
+            # Detect OAuth tokens (sk-ant-oat*, cc-*, JWTs) and use Bearer auth.
+            is_oauth = api_key.startswith("sk-ant-oat") or api_key.startswith("cc-") or api_key.count(".") >= 2
+            if is_oauth:
+                req.add_header("Authorization", f"Bearer {api_key}")
+                req.add_header("anthropic-beta", "oauth-2025-04-20")
+            else:
+                req.add_header("x-api-key", api_key)
             req.add_header("anthropic-version", "2023-06-01")
             req.add_header("Accept", "application/json")
             with urllib.request.urlopen(req, timeout=timeout) as resp:
