@@ -2540,7 +2540,6 @@ class SessionDB:
                     pass
         except OSError:
             pass
-
     def delete_session(
         self,
         session_id: str,
@@ -2548,32 +2547,107 @@ class SessionDB:
     ) -> bool:
         """Delete a session and all its messages.
 
-        Child sessions are orphaned (parent_session_id set to NULL) rather
-        than cascade-deleted, so they remain accessible independently.
+        When the session is part of a compression chain (e.g.
+        Root -> Cont2 -> Cont3 projected as one in the sidebar), the
+        **entire chain** is deleted so the user only needs one delete
+        instead of deleting each continuation individually (#48524).
+
+        Non-compression children of every deleted session are orphaned
+        (parent_session_id set to NULL) so they remain accessible
+        independently.
+
         When *sessions_dir* is provided, also removes on-disk transcript
-        files (``.json`` / ``.jsonl`` / ``request_dump_*``) for the deleted
-        session. Returns True if the session was found and deleted.
+        files for every deleted session.  Returns True if the session
+        (or any member of its chain) was found and deleted.
         """
+        deleted_ids: list = []
+
         def _do(conn):
-            cursor = conn.execute(
-                "SELECT COUNT(*) FROM sessions WHERE id = ?", (session_id,)
-            )
-            if cursor.fetchone()[0] == 0:
+            # Quick existence check
+            if not conn.execute(
+                "SELECT 1 FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone():
                 return False
-            # Orphan child sessions so FK constraint is satisfied
+
+            # --- 1. Collect the full compression chain ---
+            # Walk backward from the target session to find the root of
+            # the compression chain (the earliest session whose parent is
+            # either missing or is NOT a compression continuation), then
+            # walk forward following the "main" chain at each step (the
+            # latest child of each compressed parent — matching the logic
+            # in get_compression_tip).
+
+            # Backward: follow parent_session_id while the parent was
+            # ended with end_reason='compression' and the child was
+            # created after the parent ended.
+            current = session_id
+            root_id = current
+            for _ in range(100):
+                row = conn.execute(
+                    "SELECT p.id AS parent_id "
+                    "FROM sessions child "
+                    "JOIN sessions p ON p.id = child.parent_session_id "
+                    "WHERE child.id = ? "
+                    "  AND p.end_reason = 'compression' "
+                    "  AND child.started_at >= p.ended_at",
+                    (current,),
+                ).fetchone()
+                if row is None:
+                    root_id = current
+                    break
+                current = row["parent_id"]
+                root_id = current
+
+            # Forward: from root, follow the latest compression
+            # continuation at each step (same logic as get_compression_tip).
+            chain_ids = []
+            current = root_id
+            for _ in range(100):
+                chain_ids.append(current)
+                row = conn.execute(
+                    "SELECT child.id "
+                    "FROM sessions child "
+                    "WHERE child.parent_session_id = ? "
+                    "  AND started_at >= ("
+                    "      SELECT ended_at FROM sessions "
+                    "      WHERE id = ? AND end_reason = 'compression'"
+                    "  ) "
+                    "ORDER BY child.started_at DESC LIMIT 1",
+                    (current, current),
+                ).fetchone()
+                if row is None:
+                    break
+                current = row["id"]
+
+            if not chain_ids:
+                return False
+
+            # --- 2. Orphan non-compression children of every chain member ---
+            placeholders = ",".join("?" for _ in chain_ids)
             conn.execute(
-                "UPDATE sessions SET parent_session_id = NULL "
-                "WHERE parent_session_id = ?",
-                (session_id,),
+                f"UPDATE sessions SET parent_session_id = NULL "
+                f"WHERE parent_session_id IN ({placeholders})",
+                chain_ids,
             )
-            conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
-            conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+
+            # --- 3. Delete messages then session rows for the whole chain ---
+            conn.execute(
+                f"DELETE FROM messages WHERE session_id IN ({placeholders})",
+                chain_ids,
+            )
+            conn.execute(
+                f"DELETE FROM sessions WHERE id IN ({placeholders})",
+                chain_ids,
+            )
+
+            deleted_ids.extend(chain_ids)
             return True
 
-        deleted = self._execute_write(_do)
-        if deleted:
-            self._remove_session_files(sessions_dir, session_id)
-        return deleted
+        found = self._execute_write(_do)
+        if found:
+            for sid in deleted_ids:
+                self._remove_session_files(sessions_dir, sid)
+        return found
 
     def prune_sessions(
         self,
