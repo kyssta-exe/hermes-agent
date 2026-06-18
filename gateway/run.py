@@ -7355,6 +7355,14 @@ class GatewayRunner:
                     canonical = _cmd_def.name if _cmd_def else command
                     break
 
+        # Consume was_auto_reset when the first message after auto-reset is
+        # a slash command.  Commands return early (before the auto-reset
+        # handler at line ~8089), so the flag would leak to the next regular
+        # message and incorrectly clear session-scoped overrides (e.g. a
+        # /model switch applied as the first message).  See #48031.
+        if command and getattr(session_entry, "was_auto_reset", False):
+            session_entry.was_auto_reset = False
+
         if canonical == "new":
             if self._is_telegram_topic_root_lobby(source):
                 return self._telegram_topic_root_new_message()
