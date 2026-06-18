@@ -1489,6 +1489,15 @@ def switch_model(agent, new_model, new_provider, api_key='', base_url='', api_mo
     # ── Invalidate cached system prompt so it rebuilds next turn ──
     agent._cached_system_prompt = None
 
+    # Also invalidate the persisted system prompt in the session DB so
+    # gateway turns (which construct fresh AIAgent instances and restore
+    # from DB) don't resurrect the old Model:/Provider: header.
+    if hasattr(agent, "_session_db") and agent._session_db and agent.session_id:
+        try:
+            agent._session_db.update_system_prompt(agent.session_id, "")
+        except Exception:
+            pass  # non-fatal — cache invalidation still works in-memory
+
     # ── Update _primary_runtime so the change persists across turns ──
     _cc = agent.context_compressor if hasattr(agent, "context_compressor") and agent.context_compressor else None
     agent._primary_runtime = {
