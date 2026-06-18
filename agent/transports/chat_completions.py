@@ -126,6 +126,14 @@ class ChatCompletionsTransport(ProviderTransport):
           ``Extra inputs are not permitted, field: 'messages[N].tool_name'``.
           Permissive providers (OpenRouter, MiniMax) silently ignore the
           field, which masked the bug for months.
+        - Gateway-internal replay metadata: ``timestamp``, ``message_id``,
+          ``observed``, ``finish_reason``.  These are attached by
+          ``get_messages_as_conversation()`` (SQLite) and the gateway's
+          JSONL transcript layer for debugging / platform-side matching,
+          but are not part of the Chat Completions schema.  Permissive
+          providers (OpenAI, OpenRouter) silently ignore them; strict
+          validators (GLM-5.2 via opencode-go) reject with
+          ``Extra inputs are not permitted, field: 'messages[N].timestamp'``.
         - Hermes-internal scaffolding markers — any top-level message key
           starting with ``_`` (e.g. ``_empty_recovery_synthetic``,
           ``_empty_terminal_sentinel``, ``_thinking_prefill``). These are
@@ -137,15 +145,22 @@ class ChatCompletionsTransport(ProviderTransport):
           ``Extra inputs are not permitted, field: 'messages[N]._empty_recovery_synthetic'``,
           which then poisons every subsequent request in the session.
         """
+        # Internal metadata keys that must never reach the provider API.
+        _STRIP_KEYS = (
+            "codex_reasoning_items",
+            "codex_message_items",
+            "tool_name",
+            "timestamp",
+            "message_id",
+            "observed",
+            "finish_reason",
+        )
+
         needs_sanitize = False
         for msg in messages:
             if not isinstance(msg, dict):
                 continue
-            if (
-                "codex_reasoning_items" in msg
-                or "codex_message_items" in msg
-                or "tool_name" in msg
-            ):
+            if any(k in msg for k in _STRIP_KEYS):
                 needs_sanitize = True
                 break
             if any(isinstance(k, str) and k.startswith("_") for k in msg):
@@ -169,9 +184,8 @@ class ChatCompletionsTransport(ProviderTransport):
         for msg in sanitized:
             if not isinstance(msg, dict):
                 continue
-            msg.pop("codex_reasoning_items", None)
-            msg.pop("codex_message_items", None)
-            msg.pop("tool_name", None)
+            for k in _STRIP_KEYS:
+                msg.pop(k, None)
             # Drop all Hermes-internal scaffolding markers (``_``-prefixed).
             # OpenAI's message schema has no ``_``-prefixed fields, so this
             # is safe and future-proofs against new markers being added.
