@@ -120,6 +120,12 @@ def ensure_dependency(
             print(f"  Install {dep} manually and try again.")
         return False
 
+    # Skip interactive prompts in gateway mode — there is no TTY to
+    # answer them, and on Windows ``sys.stdin.isatty()`` can report
+    # True even when launched from a Scheduled Task / background.
+    if os.environ.get("HERMES_GATEWAY_NO_SUPERVISE", "").lower() in ("1", "true", "yes"):
+        return False
+
     if interactive and sys.stdin.isatty():
         desc = _DEP_DESCRIPTIONS.get(dep, dep)
         try:

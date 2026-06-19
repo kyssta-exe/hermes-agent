@@ -907,7 +907,7 @@ def init_agent(
             from agent.ssl_guard import verify_ca_bundle_with_fallback
 
             verify_ca_bundle_with_fallback()
-            agent.client = agent._create_openai_client(client_kwargs, reason="agent_init", shared=True)
+            agent.client = agent._create_openai_client(client_kwargs, reason="agent_init", shared=False)
             if not agent.quiet_mode:
                 print(f"🤖 AI Agent initialized with model: {agent.model}")
                 if base_url:
