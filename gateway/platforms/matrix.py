@@ -3674,7 +3674,7 @@ class MatrixAdapter(BasePlatformAdapter):
         has_explicit_name = bool(room_name)
         is_direct = bool(self._dm_rooms.get(room_id, False))
         conflict = bool(is_direct and has_explicit_name)
-        chat_type = "dm" if is_direct and not has_explicit_name else "room"
+        chat_type = "dm" if is_direct else "room"
         display_name = room_name or canonical_alias or room_id
 
         identity = MatrixRoomIdentity(

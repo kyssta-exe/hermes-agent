@@ -525,13 +525,18 @@ class TestMatrixDmDetection:
         assert await self.adapter._is_dm_room("!project:ex.org") is False
 
     @pytest.mark.asyncio
-    async def test_named_room_overrides_stale_dm_cache(self):
-        """Explicit room names should defeat stale/conflicting m.direct data."""
+    async def test_named_dm_room_still_dm_with_conflict(self):
+        """Rooms in m.direct with explicit names are still classified as DM.
+
+        Most Matrix clients auto-set DM room names (e.g. 'Alice & Bot'),
+        so m.direct must remain authoritative.  The conflict flag tracks
+        the mismatch for downstream consumers.
+        """
         self.adapter._joined_rooms = {"!stale:ex.org"}
         self.adapter._dm_rooms = {"!stale:ex.org": True}
         self.adapter._client = MagicMock()
         self.adapter._client.get_state_event = AsyncMock(
-            side_effect=lambda room_id, event_type: {"content": {"name": "Ops Room"}}
+            side_effect=lambda room_id, event_type: {"content": {"name": "Alice & Bot"}}
             if event_type == "m.room.name"
             else (_ for _ in ()).throw(Exception("no alias"))
         )
@@ -540,9 +545,9 @@ class TestMatrixDmDetection:
 
         identity = await self.adapter._resolve_room_identity("!stale:ex.org")
 
-        assert identity.chat_type == "room"
+        assert identity.chat_type == "dm"
         assert identity.conflict is True
-        assert await self.adapter._is_dm_room("!stale:ex.org") is False
+        assert await self.adapter._is_dm_room("!stale:ex.org") is True
 
     @pytest.mark.asyncio
     async def test_canonical_alias_used_when_name_missing(self):
