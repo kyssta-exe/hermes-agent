@@ -1257,7 +1257,7 @@ None recoverable from deterministic fallback.
 None recoverable from deterministic fallback.
 
 {HISTORICAL_PENDING_ASKS_HEADING}
-{active_task}
+None — do not duplicate the active task here. The model must NOT re-answer questions already addressed in the conversation. Only genuinely unanswered questions belong in this section.
 
 ## Relevant Files
 {_bullets(relevant_files, limit=12)}
@@ -2339,12 +2339,15 @@ This compaction should PRIORITISE preserving all information related to the focu
         _merge_summary_into_tail = False
         last_head_role = messages[compress_start - 1].get("role", "user") if compress_start > 0 else "user"
         first_tail_role = messages[compress_end].get("role", "user") if compress_end < n_messages else "user"
-        # Pick a role that avoids consecutive same-role with both neighbors.
-        # Priority: avoid colliding with head (already committed), then tail.
+        # Force role="user" for the summary to prevent models from regurgitating
+        # the summary text as their own output when role="assistant" (#33256).
+        # The _SUMMARY_END_MARKER prevents weak models from reading verbatim
+        # "## Active Task" quotes as fresh input (#11475, #14521).
+        # Only use merge-into-tail when both neighbors would force same-role.
         if last_head_role in {"assistant", "tool"}:
             summary_role = "user"
         else:
-            summary_role = "assistant"
+            summary_role = "user"
         # If the chosen role collides with the tail AND flipping wouldn't
         # collide with the head, flip it.
         if summary_role == first_tail_role:
@@ -2358,13 +2361,10 @@ This compaction should PRIORITISE preserving all information related to the focu
                 # of inserting a standalone message that breaks alternation.
                 _merge_summary_into_tail = True
 
-        # When the summary lands as a standalone role="user" message,
-        # weak models read the verbatim "## Active Task" quote of a past
-        # user request as fresh input (#11475, #14521).
-        # When it lands as role="assistant", models may regurgitate the
-        # summary text as their own output (#33256). In both cases, append
-        # the explicit end marker so the model has a clear "summary ends
-        # here, respond to the message below" signal.
+        # Force role="user" for the summary to prevent models from regurgitating
+        # the summary text as their own output when role="assistant" (#33256).
+        # The _SUMMARY_END_MARKER prevents weak models from reading verbatim
+        # "## Active Task" quotes as fresh input (#11475, #14521).
         if not _merge_summary_into_tail:
             summary = summary + "\n\n" + _SUMMARY_END_MARKER
 
