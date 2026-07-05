@@ -148,6 +148,11 @@ def build_dashboard_parser(
     serve_parser.add_argument(
         "--no-open", action="store_true", help=argparse.SUPPRESS
     )
+    serve_parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="Replace any existing Hermes serve process (useful for systemd)",
+    )
     serve_parser.set_defaults(func=cmd_dashboard, no_open=True)
 
     # `hermes dashboard register` — register a self-hosted dashboard OAuth

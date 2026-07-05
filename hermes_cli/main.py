@@ -11648,7 +11648,11 @@ def cmd_dashboard(args):
         remaining = _find_stale_dashboard_pids()
         sys.exit(1 if remaining else 0)
 
-    # ── Unified profile launch routing ────────────────────────────────
+    # Handle serve --replace
+    if args.command == "serve" and getattr(args, "replace", False):
+    _kill_stale_dashboard_processes(reason="serve --replace requested")
+
+    # Handle serve --replace\n    if args.command == "serve" and getattr(args, "replace", False):\n    _kill_stale_dashboard_processes(reason="serve --replace requested")\n    \n    # ── Unified profile launch routing ────────────────────────────────
     # The dashboard is a MACHINE management surface: it can read/write any
     # profile via the per-request ?profile= scoping. Running one dashboard
     # per profile just fragments that (port collisions, N processes, and a
