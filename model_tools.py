@@ -397,6 +397,9 @@ def _compute_tool_definitions(
     # is enabled, any tools belonging to a disabled toolset are strictly
     # stripped out. See issue #17309.
     if disabled_toolsets:
+        # Save what tools come from enabled toolsets before applying disabling
+        # so we don't remove tools that were explicitly enabled via other toolsets
+        tools_from_enabled = set(tools_to_include)
         for toolset_name in disabled_toolsets:
             if validate_toolset(toolset_name):
                 if toolset_name.startswith("hermes-"):
@@ -406,8 +409,10 @@ def _compute_tool_definitions(
                     # Subtract only the bundle's non-core delta; keep core.
                     from toolsets import bundle_non_core_tools
                     to_remove = bundle_non_core_tools(toolset_name)
-                    tools_to_include.difference_update(to_remove)
-                    resolved = sorted(to_remove)
+                    # Only remove tools that are NOT provided by enabled toolsets
+                    actual_removal = to_remove - tools_from_enabled
+                    tools_to_include.difference_update(actual_removal)
+                    resolved = sorted(actual_removal)
                     if not quiet_mode and toolset_name not in _WARNED_DISABLED_BUNDLES:
                         _WARNED_DISABLED_BUNDLES.add(toolset_name)
                         logger.info(
@@ -421,14 +426,18 @@ def _compute_tool_definitions(
                         )
                 else:
                     resolved = resolve_toolset(toolset_name)
-                    tools_to_include.difference_update(resolved)
+                    # Only remove tools that are NOT provided by enabled toolsets
+                    actual_removal = set(resolved) - tools_from_enabled
+                    tools_to_include.difference_update(actual_removal)
                 if not quiet_mode:
                     print(f"🚫 Disabled toolset '{toolset_name}': {', '.join(resolved) if resolved else 'no tools'}")
             elif toolset_name in _LEGACY_TOOLSET_MAP:
                 legacy_tools = _LEGACY_TOOLSET_MAP[toolset_name]
-                tools_to_include.difference_update(legacy_tools)
+                # Only remove legacy tools that are NOT provided by enabled toolsets
+                actual_removal = set(legacy_tools) - tools_from_enabled
+                tools_to_include.difference_update(actual_removal)
                 if not quiet_mode:
-                    print(f"🚫 Disabled legacy toolset '{toolset_name}': {', '.join(legacy_tools)}")
+                    print(f"🚫 Disabled legacy toolset '{toolset_name}': {', '.join(sorted(actual_removal)) if actual_removal else 'no tools'}")
             elif not quiet_mode:
                 print(f"⚠️  Unknown toolset: {toolset_name}")
 
