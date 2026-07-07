@@ -276,13 +276,14 @@ class TestResolveTaskProviderModel:
 
 
 class TestBuildCallKwargsMaxTokens:
-    """_build_call_kwargs should not cap output by default (#34530).
+    """_build_call_kwargs forwards max_tokens to ALL providers when set.
 
-    Most chat-completions providers treat an omitted max_tokens as "use the
-    model max", which is what we want for auxiliary tasks. An explicit cap only
-    risks truncation or a wire-format 400 (GitHub Copilot / GPT-5 reject
-    max_tokens; ZAI vision rejects it entirely). The Anthropic Messages wire is
-    the one exception — max_tokens is a mandatory field there.
+    When the user configures reference_max_tokens, per-slot max_tokens, or
+    title_max_tokens etc., the value should be included in the API request
+    regardless of provider so the configured cap is actually enforced
+    (#60388).  Provider-specific edge cases (e.g. ZAI vision rejecting
+    max_tokens) are handled at a higher level in the provider adapter or
+    appear as a visible 400/fallback rather than silent omission.
     """
 
     @pytest.mark.parametrize(
@@ -297,7 +298,7 @@ class TestBuildCallKwargsMaxTokens:
             ("zai", "glm-4v-flash", "https://open.bigmodel.cn/api/paas/v4"),
         ],
     )
-    def test_omits_max_tokens_for_openai_compatible(self, provider, model, base_url):
+    def test_includes_max_tokens_for_all_providers(self, provider, model, base_url):
         from agent.auxiliary_client import _build_call_kwargs
 
         kwargs = _build_call_kwargs(
@@ -307,8 +308,7 @@ class TestBuildCallKwargsMaxTokens:
             max_tokens=1234,
             base_url=base_url,
         )
-        assert "max_tokens" not in kwargs
-        assert "max_completion_tokens" not in kwargs
+        assert kwargs.get("max_tokens") == 1234
 
     @pytest.mark.parametrize(
         "provider,model,base_url",

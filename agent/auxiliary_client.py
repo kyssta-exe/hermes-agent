@@ -6211,38 +6211,23 @@ def _build_call_kwargs(
         kwargs["temperature"] = temperature
 
     if max_tokens is not None:
-        # We do NOT cap output by default. Most chat-completions providers treat
-        # an omitted max_tokens as "use the model's max output", which is what we
-        # want for auxiliary tasks (compression summaries, titles, vision, etc.) —
-        # an explicit cap only risks truncating a summary or 400-ing on providers
-        # that reject the parameter outright (e.g. GitHub Copilot / newer OpenAI
-        # GPT-5 models require max_completion_tokens, not max_tokens; ZAI vision
-        # models reject it entirely with error 1210). Omitting it sidesteps all of
-        # those wire-format quirks at once.
+        # Forward an explicit max_tokens to ALL providers so the user's
+        # configured caps (reference_max_tokens, per-slot max_tokens,
+        # title_max_tokens, etc.) are respected everywhere (#60388).
+        # Previously we only sent it to Anthropic-compat and NVIDIA NIM
+        # endpoints, silently dropping it for everyone else — meaning MoA
+        # reference_max_tokens and auxiliary max_tokens settings in
+        # config.yaml had no effect on OpenRouter, Copilot, Nous, custom
+        # endpoints, etc.
         #
-        # The one exception is the Anthropic Messages wire (MiniMax and any
-        # ``/anthropic`` endpoint reached through the OpenAI SDK wrapper), where
-        # max_tokens is a MANDATORY field — omitting it is a hard 400. Keep it only
-        # there.
-        #
-        # NVIDIA NIM (integrate.api.nvidia.com and local NIM endpoints) is a
-        # second exception: some models—notably minimaxai/minimax-m3—return HTTP
-        # 200 with an empty choices[] payload when max_tokens is omitted. The main
-        # NVIDIA chat path already sends an output cap via the provider profile;
-        # preserve it on the auxiliary path too.
-        _effective_base = base_url or (
-            _current_custom_base_url() if provider == "custom" else ""
-        )
-        _provider_norm = str(provider or "").strip().lower()
-        _is_nvidia_nim = (
-            _provider_norm in {"nvidia", "nvidia-nim", "nim", "build-nvidia", "nemotron"}
-            or base_url_host_matches(_effective_base, "integrate.api.nvidia.com")
-        )
-        if (
-            _is_anthropic_compat_endpoint(provider, _effective_base)
-            or _is_nvidia_nim
-        ):
-            kwargs["max_tokens"] = max_tokens
+        # The old omits-by-default design avoided a few provider-specific
+        # quirks (ZAI vision models reject max_tokens with error 1210;
+        # GitHub Copilot / newer GPT-5 models need max_completion_tokens
+        # instead), but those are edge cases that produce a 400/fallback
+        # rather than silent omission — a failing reference is visible
+        # whereas a silently ignored cap is invisible. Provider-specific
+        # parameter mapping belongs in the provider adapter, not here.
+        kwargs["max_tokens"] = max_tokens
 
     if tools:
         # Defensive dedup: providers like Google Vertex, Azure, and Bedrock
