@@ -598,7 +598,12 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       } catch {
         return;
       }
-      if (fontChanged && term.rows > 0) {
+      // Always refresh the viewport after fit, not only when fontSize changed.
+      // xterm.js may not paint all rows from the write buffer when a resumed
+      // session's transcript arrives in rapid succession via the PTY WebSocket;
+      // forcing a full viewport refresh here ensures the transcript renders
+      // correctly on initial load without requiring a theme change (#59591).
+      if (term.rows > 0) {
         try {
           term.refresh(0, term.rows - 1);
         } catch {
