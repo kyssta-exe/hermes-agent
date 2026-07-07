@@ -418,6 +418,23 @@ class MemoryStore:
                 # If all matches are identical (exact duplicates), operate on the first one
                 unique_texts = {e for _, e in matches}
                 if len(unique_texts) > 1:
+                    # Check if new_content already exists verbatim among the matched
+                    # entries.  If so, a fallback add() would create a duplicate,
+                    # so warn up front and point at batch operations (#60089).
+                    if new_content in unique_texts:
+                        previews = self._previews([e for _, e in matches])
+                        return self._consolidation_failure({
+                            "success": False,
+                            "error": (
+                                f"Multiple entries matched '{old_text}', and the "
+                                f"replacement content already exists as a separate "
+                                f"entry.  Use a more specific 'old_text' to target "
+                                f"the exact entry, or remove the existing duplicate "
+                                f"entry first."
+                            ),
+                            "matches": previews,
+                            "current_entries": entries,
+                        })
                     previews = self._previews([e for _, e in matches])
                     return {
                         "success": False,
