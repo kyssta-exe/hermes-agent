@@ -1299,6 +1299,14 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
             if event.media_urls:
                 existing.media_urls.extend(event.media_urls)
                 existing.media_types.extend(event.media_types)
+            # Carry forward message_id and reply_to_message_id from the latest
+            # event so the agent's reply quotes the most recent message.
+            latest_message_id = getattr(event, "message_id", None)
+            if latest_message_id is not None:
+                existing.message_id = str(latest_message_id)
+            latest_anchor = latest_message_id or getattr(event, "reply_to_message_id", None)
+            if latest_anchor is not None and hasattr(existing, "reply_to_message_id"):
+                existing.reply_to_message_id = str(latest_anchor)
 
         prior_task = self._pending_text_batch_tasks.get(key)
         if prior_task and not prior_task.done():
