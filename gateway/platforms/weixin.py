@@ -123,6 +123,10 @@ def _make_ssl_connector() -> Optional["aiohttp.TCPConnector"]:
     When ``certifi`` is installed, use its Mozilla CA bundle to guarantee
     verification. Otherwise fall back to aiohttp's default (which honors
     ``SSL_CERT_FILE`` env var via ``trust_env=True``).
+
+    ``force_close=True`` prevents the aiohttp 3.14.x connection pool regression
+    (aio-libs/aiohttp#12795) where stale keep-alive connections are handed out
+    to new requests, causing immediate ~2ms read timeouts (#60025).
     """
     try:
         import ssl
@@ -132,7 +136,7 @@ def _make_ssl_connector() -> Optional["aiohttp.TCPConnector"]:
     if not AIOHTTP_AVAILABLE:
         return None
     ssl_ctx = ssl.create_default_context(cafile=certifi.where())
-    return aiohttp.TCPConnector(ssl=ssl_ctx)
+    return aiohttp.TCPConnector(ssl=ssl_ctx, force_close=True)
 
 ITEM_TEXT = 1
 ITEM_IMAGE = 2
