@@ -469,6 +469,14 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /* Retina (high-DPI) displays: antialiased makes text too thin/faint.
+     Use the browser default which gives heavier, more readable glyphs. */
+  @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    body {
+      -webkit-font-smoothing: auto;
+    }
+  }
+
   button,
   textarea {
     font: inherit;
