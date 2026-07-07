@@ -117,6 +117,114 @@ _REFERENCE_SYSTEM_PROMPT = (
     "aggregator, not an answer shown to the user."
 )
 
+# Rough char-to-token ratio used when estimating whether reference messages
+# fit a model's context window. 4 chars/token is a conservative average that
+# works well across most providers (OpenAI, Anthropic, Gemini, etc.) without
+# needing model-specific tokenizers.
+_CHARS_PER_TOKEN_ESTIMATE = 4.0
+
+# Safety margin when fitting reference messages to a model's context window.
+# Messages are trimmed when they exceed 90% of the window, leaving ~10%
+# headroom for the reference model's output tokens without hitting the hard
+# limit. Providers that enforce strict context-length rejection (e.g. Kimi,
+# DeepSeek) will 400 on the final few tokens otherwise.
+_REFERENCE_CONTEXT_MARGIN = 0.90
+
+
+def _fit_to_context_window(
+    messages: list[dict[str, Any]],
+    model: str,
+    runtime: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Trim messages to fit the reference model's context window.
+
+    When a MoA reference model's context window is smaller than the advisory
+    view of the conversation (e.g. kimi-k2.7-code @ 262K tokens as reference,
+    glm-5 @ 1M as aggregator), the reference call would otherwise fail with
+    a hard HTTP 400 ("The prompt is too long") that ``_run_reference``'s
+    try/except silently converts into a ``[failed: ...]`` label — degrading
+    the MoA turn with no user-visible signal.
+
+    This function:
+    1. Looks up the reference model's context window via ``get_model_context_length``.
+    2. Estimates the total token count of the messages (~4 chars/token).
+    3. If the estimate exceeds 90% of the window, drops the oldest non-system
+       messages (preserving the system prompt and most recent conversation)
+       until the estimate fits.
+    4. If even the last 3 messages + system prompt exceed the window, prepends
+       a warning in the system prompt so the aggregator sees the reference was
+       constrained.
+
+    Returns the (possibly trimmed) messages list.
+    """
+    ref_model = (model or "").strip()
+    if not ref_model:
+        return messages
+
+    try:
+        from agent.model_metadata import get_model_context_length
+
+        context_length = get_model_context_length(
+            ref_model,
+            base_url=runtime.get("base_url"),
+            api_key=runtime.get("api_key"),
+        )
+    except Exception:
+        # If we can't determine the context length, err on the side of safety
+        # and don't trim — the call may succeed, and if it fails the existing
+        # try/except in _run_reference handles it gracefully.
+        return messages
+
+    if not context_length or context_length <= 0:
+        return messages
+
+    threshold = int(context_length * _REFERENCE_CONTEXT_MARGIN)
+
+    # Estimate current token count
+    def _estimate(m: list[dict[str, Any]]) -> int:
+        total_chars = sum(
+            len(str(msg.get("content", ""))) for msg in m
+        )
+        return int(total_chars / _CHARS_PER_TOKEN_ESTIMATE)
+
+    if _estimate(messages) <= threshold:
+        return messages
+
+    # Separate system prompt (if any) — must always be preserved
+    system_idx = None
+    for i, m in enumerate(messages):
+        if m.get("role") == "system":
+            system_idx = i
+            break
+    system_msg = messages.pop(system_idx) if system_idx is not None else None
+
+    # Drop oldest messages until we fit or only 3 remain (system + last exchange)
+    dropped_count = 0
+    while len(messages) > 3 and _estimate(messages) > threshold:
+        messages.pop(0)
+        dropped_count += 1
+
+    # If even the last 3 exceed the window, add a trimming note to system prompt
+    if _estimate(messages) > threshold and system_msg is not None:
+        original_content = system_msg.get("content", "")
+        note = (
+            "[The conversation history exceeds this reference model's context "
+            "window. The advice below is based on a constrained view of the "
+            "conversation and may miss earlier context.]\n\n"
+        )
+        system_msg["content"] = note + original_content
+
+    # Re-prepend system prompt
+    if system_msg is not None:
+        messages.insert(0, system_msg)
+        if dropped_count > 0:
+            logger.warning(
+                "MoA reference %s: dropped %d oldest turn(s) to fit context "
+                "window of %d tokens (est. %d tokens after trim)",
+                ref_model, dropped_count, context_length, _estimate(messages),
+            )
+
+    return messages
 
 
 def _slot_label(slot: dict[str, str]) -> str:
@@ -270,6 +378,18 @@ def _run_reference(
         # (their caching is automatic; markers are ignored harmlessly, but we
         # only decorate when the policy says the route honors them).
         messages = _maybe_apply_moa_cache_control(messages, runtime)
+        # Before calling the reference model, check that the messages fit
+        # within its context window. If the advisory view exceeds the model's
+        # limit, trim older turns so the reference can still provide guidance
+        # rather than failing with a silent 400. This mirrors what
+        # ContextCompressor does for the acting model's conversation, but
+        # applies specifically to the disposable advisory copy each reference
+        # sees — the acting aggregator's transcript is untouched.
+        messages = _fit_to_context_window(
+            messages,
+            model=slot.get("model", ""),
+            runtime=runtime,
+        )
         response = call_llm(
             task="moa_reference",
             messages=messages,
