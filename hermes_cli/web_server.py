@@ -391,6 +391,8 @@ def should_require_auth(host: str, allow_public: bool = False) -> bool:
     Truth table:
       host == loopback        → False (no auth — local-only, trusted operator)
       host != loopback        → True  (gate engages — OAuth or password required)
+      HERMES_DASHBOARD_INSECURE=1
+                              → False (operator explicitly opts out)
 
     "Loopback" is 127.0.0.1, localhost, ::1. RFC1918 / CGNAT / link-local are
     deliberately treated as PUBLIC — a hostile device on the same LAN is exactly
@@ -403,7 +405,14 @@ def should_require_auth(host: str, allow_public: bool = False) -> bool:
     unauthenticated-public-dashboard hole behind the June 2026 ``hermes-0day``
     MCP-persistence campaign, where ``--insecure --host 0.0.0.0`` left the
     config/MCP/agent surface open to internet scanners.
+
+    However, the ``HERMES_DASHBOARD_INSECURE`` env var is still honoured as a
+    deliberate operator opt-out — it is used by Docker/reverse-proxy deployments
+    where authentication is provided by an upstream proxy, not by Hermes itself.
+    The env var is the supported escape hatch; ``--insecure`` the CLI flag is not.
     """
+    if os.environ.get("HERMES_DASHBOARD_INSECURE", "").strip() in ("1", "true", "yes"):
+        return False
     return host not in _LOOPBACK_HOST_VALUES
 
 
@@ -15273,13 +15282,16 @@ def start_server(
     # the hermes-0day MCP-persistence campaign abused unauthenticated public
     # dashboards). If a caller still passes it, warn that it is now a no-op
     # rather than silently changing their expectation of an open bind.
+    # The ``HERMES_DASHBOARD_INSECURE`` env var is the supported escape hatch
+    # for Docker/reverse-proxy deployments (checked inside should_require_auth).
     if allow_public and host not in _LOOPBACK_HOST_VALUES:
         _log.warning(
             "--insecure no longer bypasses dashboard authentication. A "
             "non-loopback bind (%s) now ALWAYS requires an auth provider "
             "(OAuth or the bundled password provider). Configure one — see "
             "below — or bind to 127.0.0.1 and reach it over an SSH tunnel / "
-            "Tailscale.", host,
+            "Tailscale. To bypass, set HERMES_DASHBOARD_INSECURE=1.",
+            host,
         )
 
     if app.state.auth_required:

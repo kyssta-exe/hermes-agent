@@ -11771,6 +11771,7 @@ def _maybe_setup_dashboard_auth_interactively(args) -> None:
     No-ops (so the existing fail-closed ``SystemExit`` remains the backstop)
     when:
       * the bind is loopback (gate never engages), or
+      * ``HERMES_DASHBOARD_INSECURE=1`` (operator opted out), or
       * a provider is already registered, or
       * stdin/stdout isn't a TTY (Docker/s6, CI, piped ``--no-open`` runs).
     """
