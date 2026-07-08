@@ -122,6 +122,23 @@ def read_streaming_error_body(
             sum(len(c) for c in chunks),
             max_bytes,
         )
+
+    # Populate the internal _content buffer so that callers who access
+    # response.text (e.g. agent_runtime_helpers._write_request_dump) from
+    # a gemini_http_error / GeminiAPIError that carries the streaming
+    # response as .response do NOT raise httpx's
+    # "Attempted to access streaming response content, without having
+    #  called read()" — the stream was consumed via iter_bytes() above,
+    # but httpx's text/content property checks _content, which is only
+    # set by read(), not by iter_bytes().  Setting _content here makes
+    # the response appear fully consumed to every downstream consumer.
+    if chunks:
+        try:
+            response._content = b"".join(chunks)
+            response._text = None
+        except Exception:  # noqa: BLE001 — error path must not raise
+            pass
+
     return b"".join(chunks).decode("utf-8", errors="replace")
 
 
