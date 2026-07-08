@@ -5981,7 +5981,13 @@ _DEFAULT_AUX_TIMEOUT = 30.0
 # per-call ``timeout=``.  A floor is harmless for fast compression models
 # (they finish before the deadline) and is a minimum, so a higher config value
 # is kept unchanged.
-_COMPRESSION_TIMEOUT_FLOOR_SECONDS = 300.0
+# For slow local models (Ollama, llama.cpp, LM Studio, etc.) on consumer
+# hardware, compressing a large conversation history (~200K tokens) can
+# take well over 5 minutes.  The floor was raised from 300s → 900s to
+# prevent premature timeouts on such setups (#60604).  Users with very
+# slow models can increase further via ``auxiliary.compression.timeout``
+# in config.yaml (the floor is a minimum, so a higher config value wins).
+_COMPRESSION_TIMEOUT_FLOOR_SECONDS = 900.0
 
 
 def _get_auxiliary_task_config(task: str) -> Dict[str, Any]:
