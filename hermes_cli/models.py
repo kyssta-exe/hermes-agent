@@ -1400,6 +1400,7 @@ def fetch_openrouter_models(
         live_by_id[mid] = item
 
     curated: list[tuple[str, str]] = []
+    curated_ids: set[str] = set()
     for preferred_id in preferred_ids:
         live_item = live_by_id.get(preferred_id)
         if live_item is None:
@@ -1411,14 +1412,32 @@ def fetch_openrouter_models(
             continue
         desc = "free" if _openrouter_model_is_free(live_item.get("pricing")) else ""
         curated.append((preferred_id, desc))
+        curated_ids.add(preferred_id)
 
-    if not curated:
+    # Also include any tool-capable models from the live catalog that aren't
+    # in the curated list — the OR catalog has ~260 tool-capable models, and
+    # restricting to ~30 curated entries hides perfectly usable models from
+    # the picker (#60827).
+    extra_models: list[tuple[str, str]] = []
+    for mid in sorted(live_by_id.keys()):
+        if mid in curated_ids:
+            continue
+        live_item = live_by_id[mid]
+        if not _openrouter_model_supports_tools(live_item):
+            continue
+        desc = "free" if _openrouter_model_is_free(live_item.get("pricing")) else ""
+        extra_models.append((mid, desc))
+
+    if not curated and not extra_models:
         return list(_openrouter_catalog_cache or fallback)
 
-    first_id, _ = curated[0]
-    curated[0] = (first_id, "recommended")
-    _openrouter_catalog_cache = curated
-    return list(curated)
+    if curated:
+        first_id, _ = curated[0]
+        curated[0] = (first_id, "recommended")
+
+    result = curated + extra_models
+    _openrouter_catalog_cache = result
+    return list(result)
 
 
 def model_ids(*, force_refresh: bool = False) -> list[str]:
