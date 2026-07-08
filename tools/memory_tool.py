@@ -431,7 +431,8 @@ class MemoryStore:
 
             # Check that replacement doesn't blow the budget
             test_entries = entries.copy()
-            test_entries[idx] = new_content
+            # Replace only the matched portion within the entry, not the whole entry
+            test_entries[idx] = entries[idx].replace(old_text, new_content, 1)
             new_total = len(ENTRY_DELIMITER.join(test_entries))
 
             if new_total > limit:
@@ -448,7 +449,10 @@ class MemoryStore:
                     "usage": f"{current:,}/{limit:,}",
                 })
 
-            entries[idx] = new_content
+            # Replace only the matched portion within the entry, not the whole entry.
+            # This preserves other sections in composite entries when old_text
+            # is a partial match. (#59184)
+            entries[idx] = entries[idx].replace(old_text, new_content, 1)
             self._set_entries(target, entries)
             self.save_to_disk(target)
 
