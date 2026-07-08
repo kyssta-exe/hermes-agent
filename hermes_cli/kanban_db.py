@@ -6408,8 +6408,46 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
             if kind == "clean_exit":
                 # Worker subprocess returned 0 but its task is still
                 # ``running`` in the DB — it exited without calling
-                # ``kanban_complete`` / ``kanban_block``. Retrying won't
-                # help.
+                # ``kanban_complete`` / ``kanban_block``.
+                #
+                # First, check if this task already has a completed run in
+                # task_runs history. If a prior run completed successfully,
+                # the work is genuinely done — mark the task as ``done``
+                # instead of tripping the breaker (#60802). This handles
+                # local-model workers (ollama) that omit the closing
+                # ``kanban_complete`` call but whose work was completed in
+                # an earlier run before a dispatcher restart.
+                prev_completed = conn.execute(
+                    "SELECT id, outcome, summary FROM task_runs "
+                    "WHERE task_id = ? AND outcome = 'completed' "
+                    "ORDER BY ended_at DESC LIMIT 1",
+                    (row["id"],),
+                ).fetchone()
+                if prev_completed is not None:
+                    # Task was already completed in a prior run — mark it
+                    # done without counting a failure.
+                    cur = conn.execute(
+                        "UPDATE tasks SET status = 'done', claim_lock = NULL, "
+                        "claim_expires = NULL, worker_pid = NULL, "
+                        "result = ? "
+                        "WHERE id = ? AND status = 'running'",
+                        (prev_completed["summary"] or "", row["id"]),
+                    )
+                    if cur.rowcount == 1:
+                        _end_run(
+                            conn, row["id"],
+                            outcome="completed", status="done",
+                            error=None,
+                            metadata={"note": "recovered from prior completed run"},
+                        )
+                        _append_event(
+                            conn, row["id"], "completed",
+                            {"note": "recovered from prior completed run: "
+                             "worker exited cleanly without kanban_complete "
+                             "but task_runs shows a completed run"},
+                        )
+                    continue  # skip the normal crash/block path
+
                 protocol_violation = True
                 error_text = (
                     "worker exited cleanly (rc=0) without calling "
