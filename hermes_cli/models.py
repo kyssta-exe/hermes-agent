@@ -1400,6 +1400,7 @@ def fetch_openrouter_models(
         live_by_id[mid] = item
 
     curated: list[tuple[str, str]] = []
+    preferred_set: set[str] = set()
     for preferred_id in preferred_ids:
         live_item = live_by_id.get(preferred_id)
         if live_item is None:
@@ -1411,6 +1412,18 @@ def fetch_openrouter_models(
             continue
         desc = "free" if _openrouter_model_is_free(live_item.get("pricing")) else ""
         curated.append((preferred_id, desc))
+        preferred_set.add(preferred_id)
+
+    # Also include any tool-capable models from the live catalog that aren't
+    # already in the curated list — the curated snapshot is always stale
+    # against the full OpenRouter catalog (~260 tool-capable models).
+    for live_id, live_item in live_by_id.items():
+        if live_id in preferred_set:
+            continue
+        if not _openrouter_model_supports_tools(live_item):
+            continue
+        desc = "free" if _openrouter_model_is_free(live_item.get("pricing")) else ""
+        curated.append((live_id, desc))
 
     if not curated:
         return list(_openrouter_catalog_cache or fallback)
@@ -1983,15 +1996,22 @@ def detect_provider_for_model(
         return None
 
     # --- Step 2: check OpenRouter catalog ---
-    # First try exact match (handles provider/model format)
-    or_slug = _find_openrouter_slug(name)
-    if or_slug:
-        if current_provider != "openrouter":
-            return ("openrouter", or_slug)
-        # Already on openrouter, just return the resolved slug
-        if or_slug != name:
-            return ("openrouter", or_slug)
-        return None  # already on openrouter with matching name
+    # If the current provider is a custom endpoint, don't auto-switch
+    # to OpenRouter — the user explicitly configured their own endpoint
+    # and the same model name may be served there (#48305).
+    _is_custom_current = (
+        current_provider == "custom"
+        or current_provider.startswith("custom:")
+    )
+    if not _is_custom_current:
+        or_slug = _find_openrouter_slug(name)
+        if or_slug:
+            if current_provider != "openrouter":
+                return ("openrouter", or_slug)
+            # Already on openrouter, just return the resolved slug
+            if or_slug != name:
+                return ("openrouter", or_slug)
+            return None  # already on openrouter with matching name
 
     return None
 
