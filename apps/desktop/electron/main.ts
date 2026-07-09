@@ -1926,6 +1926,23 @@ function resolveGitBinary() {
 
   if (localAppData) {
     candidates.push(path.join(localAppData, 'Programs', 'Git', 'cmd', 'git.exe'))
+
+    // UGit ships a portable Git under %LOCALAPPDATA%\UGit\app-*\resources\app\git\cmd\git.exe.
+    // The versioned app-* subdirectory changes with each UGit update, so enumerate
+    // all app-* directories dynamically instead of hard-coding a version (#61494).
+    const ugitDir = path.join(localAppData, 'UGit')
+    try {
+      const entries = fs.readdirSync(ugitDir, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.isDirectory() && entry.name.startsWith('app-')) {
+          candidates.push(
+            path.join(ugitDir, entry.name, 'resources', 'app', 'git', 'cmd', 'git.exe')
+          )
+        }
+      }
+    } catch {
+      // UGit not installed or inaccessible — skip gracefully
+    }
   }
 
   _gitBinaryCache = candidates.find(fileExists) || findOnPath('git') || 'git'
