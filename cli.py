@@ -3877,6 +3877,17 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         # Parse and validate toolsets
         self.enabled_toolsets = toolsets
         self.disabled_toolsets = CLI_CONFIG["agent"].get("disabled_toolsets") or []
+        # Guard against YAML type confusion: a quoted YAML string like
+        # '["hermes-cli", "web"]' parses as a literal string, not an array.
+        # Iterating a string yields individual characters, silently dropping
+        # every toolset name. Normalize to list. (#61264)
+        if isinstance(self.disabled_toolsets, str):
+            import json
+            try:
+                parsed = json.loads(self.disabled_toolsets)
+                self.disabled_toolsets = parsed if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, TypeError):
+                self.disabled_toolsets = []
 
         if toolsets and "all" not in toolsets and "*" not in toolsets:
             # Validate each toolset — MCP server names are resolved via

@@ -1897,7 +1897,19 @@ def _get_platform_tools(
     # platforms without per-platform toolset configuration.  This runs
     # last so it overrides everything above.
     agent_cfg = config.get("agent") or {}
-    disabled_toolsets = agent_cfg.get("disabled_toolsets") or []
+    disabled_toolsets_raw = agent_cfg.get("disabled_toolsets") or []
+    # Guard against YAML type confusion — a quoted YAML string like
+    # '["hermes-cli", "web"]' parses as a literal string, not an array.
+    # Iterating a string yields individual characters, silently dropping
+    # every toolset name. Normalize to list. (#61264)
+    if isinstance(disabled_toolsets_raw, str):
+        import json
+        try:
+            parsed = json.loads(disabled_toolsets_raw)
+            disabled_toolsets_raw = parsed if isinstance(parsed, list) else []
+        except (json.JSONDecodeError, TypeError):
+            disabled_toolsets_raw = []
+    disabled_toolsets = disabled_toolsets_raw or []
     if disabled_toolsets:
         disabled_set = {str(ts) for ts in disabled_toolsets}
         enabled_toolsets -= disabled_set
