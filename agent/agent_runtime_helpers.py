@@ -1816,13 +1816,13 @@ def switch_model(agent, new_model, new_provider, api_key='', base_url='', api_mo
         # ── Swap core runtime fields ──
         agent.model = new_model
         agent.provider = new_provider
-        # Use new base_url when provided; only fall back to current when the
-        # new provider genuinely has no endpoint (e.g. native SDK providers).
-        # Without this guard the old provider's URL (e.g. Ollama's localhost
-        # address) would persist silently after switching to a cloud provider
-        # that returns an empty base_url string.
-        if base_url:
-            agent.base_url = base_url
+        # Always update base_url — even to empty — to prevent stale values from
+        # the previous provider leaking into the new provider's client.  A
+        # non-empty stale URL (e.g. "https://ollama.com/v1" from a prior
+        # ollama-cloud session) paired with the new provider's API key causes
+        # silent credential mis-routing (#61296).  When base_url is genuinely
+        # empty the client initialization uses the new provider's SDK default.
+        agent.base_url = base_url
         agent.api_mode = api_mode
         # Invalidate transport cache — new api_mode may need a different transport
         if hasattr(agent, "_transport_cache"):
@@ -1900,7 +1900,15 @@ def switch_model(agent, new_model, new_provider, api_key='', base_url='', api_mo
 
             agent.api_key = effective_key
             agent._anthropic_api_key = effective_key
-            agent._anthropic_base_url = base_url or getattr(agent, "_anthropic_base_url", None)
+            # Clear stale _anthropic_base_url when switching providers — if the
+            # new provider has no explicit base_url the Anthropic SDK uses its
+            # default endpoint, and falling back to a stale URL from the old
+            # provider would cross-wire the new provider's API key to the wrong
+            # endpoint (#61296).
+            if base_url:
+                agent._anthropic_base_url = base_url
+            elif agent.provider != old_provider:
+                agent._anthropic_base_url = ""
             agent._anthropic_client = build_anthropic_client(
                 effective_key, agent._anthropic_base_url,
                 timeout=get_provider_request_timeout(agent.provider, agent.model),
