@@ -670,15 +670,63 @@ def _localhost_to_ipv4(url: str) -> str:
     )
 
 
+def _is_likely_local_network(base_url: str) -> bool:
+    """Return True if ``base_url`` targets a local or private-network address.
+
+    Only local/private addresses should be probed for Ollama / LM Studio /
+    vLLM / llama.cpp detection.  Probing well-known public endpoints like
+    api.openai.com produces noisy 404s in egress logs and can trigger
+    false-positive alerts (#61421).
+    """
+    import re as _re
+    from urllib.parse import urlparse as _urlparse
+
+    if not base_url:
+        return False
+    try:
+        host = _urlparse(base_url).hostname or ""
+    except Exception:
+        return False
+    if not host:
+        return False
+    host_lower = host.strip().lower()
+    # Local loopback
+    if host_lower in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}:
+        return True
+    # Docker / container internal
+    if host_lower in {"host.docker.internal", "host.host.internal", "gateway.docker.internal"}:
+        return True
+    # Private IPv4 ranges
+    if _re.match(r"^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$", host_lower):
+        return True
+    if _re.match(r"^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$", host_lower):
+        return True
+    if _re.match(r"^192\.168\.\d{1,3}\.\d{1,3}$", host_lower):
+        return True
+    # Also match unix socket paths or named pipes
+    if host_lower.startswith("/") or host_lower.startswith("\\\\.\\pipe\\"):
+        return True
+    return False
+
+
 def detect_local_server_type(base_url: str, api_key: str = "") -> Optional[str]:
     """Detect which local server is running at base_url by probing known endpoints.
 
     Returns one of: "ollama", "lm-studio", "vllm", "llamacpp", or None.
 
+    Only probes endpoints on local/private network addresses.  Well-known
+    public cloud endpoints (api.openai.com, etc.) are skipped immediately
+    to avoid noisy 404s in egress logs (#61421).
+
     The result is cached for the lifetime of the process so that repeated
     calls (e.g. every 5-minute metadata refresh) never re-run the waterfall
     and never spray 404s at endpoints the server does not expose.
     """
+    # Skip probing for public/cloud endpoints — they don't expose Ollama /
+    # LM Studio / vLLM / llama.cpp probe endpoints and returning None
+    # prevents noisy HTTP 404s to known cloud providers (#61421).
+    if not _is_likely_local_network(base_url):
+        return None
     import httpx
 
     normalized = _normalize_base_url(base_url)
