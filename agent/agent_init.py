@@ -1730,6 +1730,7 @@ def init_agent(
     _selected_engine = None
     _copy_failed = False
     _engine_name = "compressor"  # default
+    _candidate = None
     try:
         _ctx_cfg = _agent_cfg.get("context", {}) if isinstance(_agent_cfg, dict) else {}
         _engine_name = _ctx_cfg.get("engine", "compressor") or "compressor"
@@ -1775,10 +1776,24 @@ def init_agent(
                     _selected_engine = None
 
         if _selected_engine is None and not _copy_failed:
-            _ra().logger.warning(
-                "Context engine '%s' not found — falling back to built-in compressor",
-                _engine_name,
-            )
+            # Distinguish "no engine at all" from "plugin system found an engine
+            # but its .name doesn't match the configured engine name" so the
+            # log message is accurate in both cases.  (#61839)
+            if _candidate is not None:
+                _ra().logger.warning(
+                    "Context engine '%s' configured but plugin system has "
+                    "engine '%s' (name mismatch) — falling back to built-in "
+                    "compressor. Set context.engine to '%s' to use the "
+                    "discovered engine.",
+                    _engine_name, getattr(_candidate, "name", "?"),
+                    getattr(_candidate, "name", "?"),
+                )
+            else:
+                _ra().logger.warning(
+                    "Context engine '%s' not found in native directory or "
+                    "plugin system — falling back to built-in compressor",
+                    _engine_name,
+                )
     # else: config says "compressor" — use built-in, don't auto-activate plugins
 
     if _selected_engine is not None:
