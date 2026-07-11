@@ -422,6 +422,11 @@ def _extract_attachments(
 class EmailAdapter(BasePlatformAdapter):
     """Email gateway adapter using IMAP (receive) and SMTP (send)."""
 
+    # Email bodies have no practical per-message length limit at the ~4000-char
+    # threshold where MAX_PLATFORM_OUTPUT would otherwise truncate.  SMTP can
+    # handle messages well beyond the adapter's own MAX_MESSAGE_LENGTH (50K).
+    splits_long_messages = True  # send() accepts the full payload without truncation
+
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform.EMAIL)
 
