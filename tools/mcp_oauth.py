@@ -351,6 +351,15 @@ class HermesTokenStorage:
 
     async def set_tokens(self, tokens: "OAuthToken") -> None:
         payload = tokens.model_dump(mode="json", exclude_none=True)
+        # Per RFC 6749 §6, a token refresh response MAY omit the
+        # ``refresh_token`` field.  If the new token doesn't include one,
+        # carry forward the existing stored refresh_token so the client can
+        # continue refreshing indefinitely instead of losing the token at
+        # the next expiry (issue #62333).
+        if "refresh_token" not in payload:
+            old_data = _read_json(self._tokens_path())
+            if old_data and "refresh_token" in old_data:
+                payload["refresh_token"] = old_data["refresh_token"]
         # Persist an absolute ``expires_at`` so a process restart can
         # reconstruct the correct remaining TTL. Without this the MCP SDK's
         # ``_initialize`` reloads a relative ``expires_in`` which has no
