@@ -366,6 +366,17 @@ class HermesTokenStorage:
                 # Mock tokens or unusual shapes: skip the expires_at write
                 # rather than fail persistence.
                 pass
+        # Per RFC 6749 §6, the token refresh endpoint MAY omit
+        # ``refresh_token`` from the response to indicate the original
+        # refresh token is still valid. When that happens,
+        # ``exclude_none=True`` drops it from the dump above, permanently
+        # losing the refresh token and bricking future refreshes.
+        # Carry forward the old ``refresh_token`` from disk if the new
+        # token response doesn't include one.
+        if "refresh_token" not in payload:
+            existing = _read_json(self._tokens_path())
+            if existing is not None and "refresh_token" in existing:
+                payload["refresh_token"] = existing["refresh_token"]
         _write_json(self._tokens_path(), payload)
         logger.debug("OAuth tokens saved for %s", self._server_name)
 
