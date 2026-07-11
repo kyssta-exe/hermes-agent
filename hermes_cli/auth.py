@@ -442,6 +442,13 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         api_key_env_vars=("AZURE_FOUNDRY_API_KEY",),
         base_url_env_var="AZURE_FOUNDRY_BASE_URL",
     ),
+    "vertex": ProviderConfig(
+        id="vertex",
+        name="Google Vertex AI",
+        auth_type="vertex",
+        inference_base_url="",
+        api_key_env_vars=(),
+    ),
 }
 
 # Auto-extend PROVIDER_REGISTRY with any api-key provider registered in
