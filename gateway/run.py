@@ -7300,11 +7300,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         await self._send_restart_notification()
 
         # Broadcast a lightweight "gateway is back" message to configured home
-        # channels only for non-chat planned restarts (terminal/SIGUSR1/service
-        # paths). Chat-originated /restart already has a precise reply target
-        # in .restart_notify.json, so keep that lifecycle in the originating
-        # chat/topic instead of also leaking it to the configured home channel.
-        if planned_restart_notification_pending:
+        # channels on every startup EXCEPT chat-originated /restart (which
+        # already has a precise reply target in .restart_notify.json, so keep
+        # that lifecycle in the originating chat/topic instead of also leaking
+        # it to the configured home channel).
+        # Covers: cold starts (hermes gateway start), planned restarts
+        # (terminal/SIGUSR1/service paths), and automatic crash recovery.
+        if not _restart_notification_pending():
             try:
                 await self._send_home_channel_startup_notifications(
                     skip_targets=None,
