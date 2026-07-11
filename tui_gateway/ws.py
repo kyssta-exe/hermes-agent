@@ -280,8 +280,14 @@ def _disable_nagle(ws: Any) -> None:
         _log.debug("ws TCP_NODELAY skip: %s", exc)
 
 
-async def handle_ws(ws: Any) -> None:
-    """Run one WebSocket session. Wire-compatible with ``tui_gateway.entry``."""
+async def handle_ws(ws: Any, pty_user_id: Optional[str] = None) -> None:
+    """Run one WebSocket session. Wire-compatible with ``tui_gateway.entry``.
+
+    `pty_user_id` (optional): when set, the authenticated dashboard user's
+    identity is injected into ``session.create`` RPC params so the agent
+    construction path can pass ``user_id=`` to ``AIAgent(...)``, enabling
+    per-user memory isolation on the dashboard/serve surface (issue #62549).
+    """
     peer = _ws_peer_label(ws)
     transport: WSTransport | None = None
     messages = 0
@@ -384,6 +390,11 @@ async def handle_ws(ws: Any) -> None:
             # response dict, which we write here from the loop.
             req_id = req.get("id") if isinstance(req, dict) else None
             req_method = req.get("method") if isinstance(req, dict) else None
+            # Inject the authenticated dashboard user's identity into
+            # session.create params so the agent construction path can pass
+            # user_id= to AIAgent(...) for multi-user isolation (#62549).
+            if pty_user_id and req_method == "session.create" and isinstance(req.get("params"), dict):
+                req["params"].setdefault("pty_user_id", pty_user_id)
             try:
                 resp = await asyncio.to_thread(server.dispatch, req, transport)
             except Exception:

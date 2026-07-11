@@ -1379,6 +1379,10 @@ def _start_agent_build(sid: str, session: dict) -> None:
                         kw["reasoning_config_override"] = reasoning
                     if (tier := current.get("create_service_tier_override")) is not None:
                         kw["service_tier_override"] = tier
+                    # Dashboard multi-user isolation: pass the authenticated
+                    # user's identity to agent construction (#62549).
+                    if (uid := current.get("pty_user_id")):
+                        kw["pty_user_id"] = uid
                 agent = _make_agent(sid, key, **kw)
             finally:
                 _clear_session_context(tokens)
@@ -4481,6 +4485,7 @@ def _make_agent(
     reasoning_config_override: dict | None = None,
     service_tier_override: str | None = None,
     platform_override: str | None = None,
+    pty_user_id: str | None = None,
 ):
     from run_agent import AIAgent
 
@@ -4627,6 +4632,7 @@ def _make_agent(
         session_id=session_id or key,
         session_db=session_db if session_db is not None else _get_db(),
         ephemeral_system_prompt=system_prompt or None,
+        user_id=pty_user_id,  # dashboard multi-user isolation (#62549)
         checkpoints_enabled=is_truthy_value(os.environ.get("HERMES_TUI_CHECKPOINTS")),
         pass_session_id=is_truthy_value(os.environ.get("HERMES_TUI_PASS_SESSION_ID")),
         skip_context_files=is_truthy_value(os.environ.get("HERMES_IGNORE_RULES")),
@@ -5212,6 +5218,11 @@ def _(rid, params: dict) -> dict:
     # fall back to the profile default service tier rather than forcing normal.
     create_service_tier_override = "priority" if params.get("fast") else None
 
+    # Dashboard/serve multi-user isolation: the authenticated user's identity
+    # is injected into the RPC params by the WS handler (tui_gateway/ws.py)
+    # so the downstream agent build can pass user_id= to AIAgent (#62549).
+    pty_user_id = str(params.get("pty_user_id") or "").strip() or None
+
     ready = threading.Event()
     now = time.time()
     lease, limit_message = _claim_active_session_slot(
@@ -5245,6 +5256,7 @@ def _(rid, params: dict) -> dict:
             "parent_session_id": parent_session_id,
             "pending_title": title or None,
             "profile_home": str(profile_home) if profile_home is not None else None,
+            "pty_user_id": pty_user_id,
             "running": False,
             "session_key": key,
             "show_reasoning": _load_show_reasoning(),
