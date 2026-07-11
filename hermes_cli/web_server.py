@@ -14419,8 +14419,8 @@ def _ws_auth_mode() -> str:
     return "loopback"
 
 
-def _ws_auth_reason(ws: "WebSocket") -> tuple[Optional[str], str]:
-    """Validate WS-upgrade auth; return ``(reason, credential)``.
+def _ws_auth_reason(ws: "WebSocket") -> tuple[Optional[str], str, Optional[dict]]:
+    """Validate WS-upgrade auth; return ``(reason, credential, info)``.
 
     ``reason`` is None when the credential is accepted, else a short
     machine-parseable token explaining the rejection (``no_credential``,
@@ -14428,6 +14428,9 @@ def _ws_auth_reason(ws: "WebSocket") -> tuple[Optional[str], str]:
     ``credential`` names which credential type was presented (``ticket``,
     ``internal``, ``token``, or ``none``) so the accepted path can log *how*
     a peer authed, not just that it did.
+    ``info`` is the identity dict from the consumed ticket / internal
+    credential (``{"user_id": ..., "provider": ...}``) when the credential
+    carries identity, or ``None`` for the legacy token path.
 
     Loopback / ``--insecure``: legacy ``?token=<_SESSION_TOKEN>`` query
     parameter, constant-time compared.
@@ -14468,8 +14471,8 @@ def _ws_auth_reason(ws: "WebSocket") -> tuple[Optional[str], str]:
         internal = ws.query_params.get("internal", "")
         if internal:
             try:
-                consume_internal_credential(internal)
-                return None, "internal"
+                info = consume_internal_credential(internal)
+                return None, "internal", info
             except TicketInvalid as exc:
                 audit_log(
                     AuditEvent.WS_TICKET_REJECTED,
@@ -14477,15 +14480,15 @@ def _ws_auth_reason(ws: "WebSocket") -> tuple[Optional[str], str]:
                     ip=(ws.client.host if ws.client else ""),
                     path=ws.url.path,
                 )
-                return "internal_invalid", "internal"
+                return "internal_invalid", "internal", None
 
         ticket = ws.query_params.get("ticket", "")
         if not ticket:
-            return "no_credential", "none"
+            return "no_credential", "none", None
 
         try:
-            consume_ticket(ticket)
-            return None, "ticket"
+            info = consume_ticket(ticket)
+            return None, "ticket", info
         except TicketInvalid as exc:
             audit_log(
                 AuditEvent.WS_TICKET_REJECTED,
@@ -14493,14 +14496,14 @@ def _ws_auth_reason(ws: "WebSocket") -> tuple[Optional[str], str]:
                 ip=(ws.client.host if ws.client else ""),
                 path=ws.url.path,
             )
-            return "ticket_invalid", "ticket"
+            return "ticket_invalid", "ticket", None
 
     token = ws.query_params.get("token", "")
     if not token:
-        return "no_credential", "none"
+        return "no_credential", "none", None
     if hmac.compare_digest(token.encode(), _SESSION_TOKEN.encode()):
-        return None, "token"
-    return "token_mismatch", "token"
+        return None, "token", None
+    return "token_mismatch", "token", None
 
 
 def _ws_auth_ok(ws: "WebSocket") -> bool:
@@ -14520,6 +14523,7 @@ def _resolve_chat_argv(
     sidecar_url: Optional[str] = None,
     profile: Optional[str] = None,
     active_session_file: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> tuple[list[str], Optional[str], Optional[dict]]:
     """Resolve the argv + cwd + env for the chat PTY.
 
@@ -14613,6 +14617,9 @@ def _resolve_chat_argv(
     if active_session_file:
         env["HERMES_TUI_ACTIVE_SESSION_FILE"] = active_session_file
 
+    if user_id:
+        env["HERMES_TUI_USER_ID"] = user_id
+
     # Profile-scoped chats must NOT attach to the dashboard's in-memory
     # gateway — it runs under the dashboard's own profile. Without the
     # attach URL, gatewayClient spawns its own `tui_gateway.entry`, which
@@ -14700,6 +14707,7 @@ async def _resolve_chat_argv_async(
     sidecar_url: Optional[str] = None,
     profile: Optional[str] = None,
     active_session_file: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> tuple[list[str], Optional[str], Optional[dict]]:
     """Resolve chat argv without blocking the dashboard event loop.
 
@@ -14715,6 +14723,7 @@ async def _resolve_chat_argv_async(
         "resume": resume,
         "sidecar_url": sidecar_url,
         "profile": profile,
+        "user_id": user_id,
     }
     if active_session_file is not None:
         kwargs["active_session_file"] = active_session_file
@@ -15419,7 +15428,7 @@ async def pty_ws(ws: WebSocket) -> None:
     #     browser banner agree on the cause:
     #       4401 bad credential   4403 host/origin mismatch
     #       4408 peer not allowed  4404 chat disabled
-    auth_reason, cred = _ws_auth_reason(ws)
+    auth_reason, cred, auth_info = _ws_auth_reason(ws)
     mode = _ws_auth_mode()
     if auth_reason is not None:
         _log.warning(
@@ -15481,6 +15490,7 @@ async def pty_ws(ws: WebSocket) -> None:
         "resume": resume,
         "sidecar_url": sidecar_url,
         "profile": profile,
+        "user_id": (auth_info or {}).get("user_id"),
     }
     if active_session_file is not None:
         resolve_kwargs["active_session_file"] = str(active_session_file)
