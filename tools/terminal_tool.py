@@ -1421,8 +1421,8 @@ def _create_environment(env_type: str, image: str, cwd: str, timeout: int,
     docker_network = cc.get("docker_network", True)
 
     if env_type == "local":
-        return _LocalEnvironment(cwd=cwd, timeout=timeout)
-    
+        env = _LocalEnvironment(cwd=cwd, timeout=timeout)
+
     elif env_type == "docker":
         # One-shot orphan reaper: clean up labeled containers left behind by
         # prior Hermes processes that hit SIGKILL / OOM / a closed terminal
@@ -1431,7 +1431,7 @@ def _create_environment(env_type: str, image: str, cwd: str, timeout: int,
         # subagents, RL benchmarks) don't run the reaper N times.
         # Disable via ``terminal.docker_orphan_reaper: false`` (issue #20561).
         _maybe_reap_docker_orphans(cc)
-        return _DockerEnvironment(
+        env = _DockerEnvironment(
             image=image, cwd=cwd, timeout=timeout,
             cpu=cpu, memory=memory, disk=disk,
             persistent_filesystem=persistent, task_id=task_id,
@@ -1445,14 +1445,14 @@ def _create_environment(env_type: str, image: str, cwd: str, timeout: int,
             extra_args=docker_extra_args,
             persist_across_processes=cc.get("docker_persist_across_processes", True),
         )
-    
+
     elif env_type == "singularity":
-        return _SingularityEnvironment(
+        env = _SingularityEnvironment(
             image=image, cwd=cwd, timeout=timeout,
             cpu=cpu, memory=memory, disk=disk,
             persistent_filesystem=persistent, task_id=task_id,
         )
-    
+
     elif env_type == "modal":
         sandbox_kwargs = {}
         if cpu > 0:
@@ -1470,13 +1470,13 @@ def _create_environment(env_type: str, image: str, cwd: str, timeout: int,
         modal_state = _get_modal_backend_state(cc.get("modal_mode"))
 
         if modal_state["selected_backend"] == "managed":
-            return _ManagedModalEnvironment(
+            env = _ManagedModalEnvironment(
                 image=image, cwd=cwd, timeout=timeout,
                 modal_sandbox_kwargs=sandbox_kwargs,
                 persistent_filesystem=persistent, task_id=task_id,
             )
 
-        if modal_state["selected_backend"] != "direct":
+        elif modal_state["selected_backend"] != "direct":
             if modal_state["managed_mode_blocked"]:
                 raise ValueError(
                     "Modal backend is configured for managed mode, but "
@@ -1505,16 +1505,17 @@ def _create_environment(env_type: str, image: str, cwd: str, timeout: int,
                 )
             raise ValueError(message)
 
-        return _ModalEnvironment(
-            image=image, cwd=cwd, timeout=timeout,
-            modal_sandbox_kwargs=sandbox_kwargs,
-            persistent_filesystem=persistent, task_id=task_id,
-        )
-    
+        else:
+            env = _ModalEnvironment(
+                image=image, cwd=cwd, timeout=timeout,
+                modal_sandbox_kwargs=sandbox_kwargs,
+                persistent_filesystem=persistent, task_id=task_id,
+            )
+
     elif env_type == "daytona":
         # Lazy import so daytona SDK is only required when backend is selected.
         from tools.environments.daytona import DaytonaEnvironment as _DaytonaEnvironment
-        return _DaytonaEnvironment(
+        env = _DaytonaEnvironment(
             image=image, cwd=cwd, timeout=timeout,
             cpu=int(cpu), memory=memory, disk=disk,
             persistent_filesystem=persistent, task_id=task_id,
@@ -1523,7 +1524,7 @@ def _create_environment(env_type: str, image: str, cwd: str, timeout: int,
     elif env_type == "ssh":
         if not ssh_config or not ssh_config.get("host") or not ssh_config.get("user"):
             raise ValueError("SSH environment requires ssh_host and ssh_user to be configured")
-        return _SSHEnvironment(
+        env = _SSHEnvironment(
             host=ssh_config["host"],
             user=ssh_config["user"],
             port=ssh_config.get("port", 22),
@@ -1537,6 +1538,10 @@ def _create_environment(env_type: str, image: str, cwd: str, timeout: int,
             f"Unknown environment type: {env_type}. Use 'local', 'docker', "
             f"'singularity', 'modal', 'daytona', or 'ssh'"
         )
+
+    # Stamp the env_type so fast-path cache lookups can verify compatibility.
+    env._env_type = env_type  # type: ignore[attr-defined]
+    return env
 
 
 def _cleanup_inactive_envs(lifetime_seconds: int = 300):
@@ -2157,9 +2162,17 @@ def terminal_tool(
                 else (task_id if task_id and task_id in _active_environments else None)
             )
             if _existing_key is not None:
-                _last_activity[_existing_key] = time.time()
-                env = _active_environments[_existing_key]
-                needs_creation = False
+                _cached_env = _active_environments[_existing_key]
+                # Validate cached env matches current config's env_type.
+                if getattr(_cached_env, "_env_type", None) != env_type:
+                    # Stale backend type — invalidate and recreate.
+                    _active_environments.pop(_existing_key, None)
+                    _last_activity.pop(_existing_key, None)
+                    _existing_key = None
+                else:
+                    _last_activity[_existing_key] = time.time()
+                    env = _cached_env
+                    needs_creation = False
             else:
                 needs_creation = True
 
@@ -2178,9 +2191,14 @@ def terminal_tool(
                         else (task_id if task_id and task_id in _active_environments else None)
                     )
                     if _existing_key is not None:
-                        _last_activity[_existing_key] = time.time()
-                        env = _active_environments[_existing_key]
-                        needs_creation = False
+                        _cached_env = _active_environments[_existing_key]
+                        if getattr(_cached_env, "_env_type", None) != env_type:
+                            _active_environments.pop(_existing_key, None)
+                            _last_activity.pop(_existing_key, None)
+                        else:
+                            _last_activity[_existing_key] = time.time()
+                            env = _cached_env
+                            needs_creation = False
 
                 if needs_creation:
                     if env_type == "singularity":

@@ -643,8 +643,14 @@ def _get_or_create_env(task_id: str):
     # Fast path: environment already exists
     with _env_lock:
         if effective_task_id in _active_environments:
-            _last_activity[effective_task_id] = time.time()
-            return _active_environments[effective_task_id], _get_env_config()["env_type"]
+            _cached = _active_environments[effective_task_id]
+            _config_env_type = _get_env_config()["env_type"]
+            if getattr(_cached, "_env_type", None) != _config_env_type:
+                _active_environments.pop(effective_task_id, None)
+                _last_activity.pop(effective_task_id, None)
+            else:
+                _last_activity[effective_task_id] = time.time()
+                return _cached, _config_env_type
 
     # Slow path: create environment (same pattern as file_tools._get_file_ops)
     with _creation_locks_lock:
@@ -655,8 +661,14 @@ def _get_or_create_env(task_id: str):
     with task_lock:
         with _env_lock:
             if effective_task_id in _active_environments:
-                _last_activity[effective_task_id] = time.time()
-                return _active_environments[effective_task_id], _get_env_config()["env_type"]
+                _cached = _active_environments[effective_task_id]
+                _config_env_type = _get_env_config()["env_type"]
+                if getattr(_cached, "_env_type", None) != _config_env_type:
+                    _active_environments.pop(effective_task_id, None)
+                    _last_activity.pop(effective_task_id, None)
+                else:
+                    _last_activity[effective_task_id] = time.time()
+                    return _cached, _config_env_type
 
         config = _get_env_config()
         env_type = config["env_type"]
