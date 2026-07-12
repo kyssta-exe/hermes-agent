@@ -76,12 +76,19 @@ class ResponsesApiTransport(ProviderTransport):
     def convert_messages(self, messages: List[Dict[str, Any]], **kwargs) -> Any:
         """Convert OpenAI chat messages to Responses API input items."""
         from agent.codex_responses_adapter import _chat_messages_to_responses_input
+
+        from utils import base_url_host_matches
+
+        base_url = kwargs.get("base_url", "") or ""
+        is_azure_responses = base_url_host_matches(base_url, "openai.azure.com")
+
         issuer = self._resolve_issuer_kind(kwargs)
         self._last_issuer_kind = issuer
         return _chat_messages_to_responses_input(
             messages,
             is_xai_responses=kwargs.get("is_xai_responses") is True,
             is_github_responses=kwargs.get("is_github_responses") is True,
+            is_azure_responses=is_azure_responses,
             replay_encrypted_reasoning=bool(
                 kwargs.get("replay_encrypted_reasoning", True)
             ),
@@ -138,9 +145,13 @@ class ResponsesApiTransport(ProviderTransport):
         if not instructions:
             instructions = DEFAULT_AGENT_IDENTITY
 
+        from utils import base_url_host_matches
+
         is_github_responses = params.get("is_github_responses") is True
         is_codex_backend = params.get("is_codex_backend") is True
         is_xai_responses = params.get("is_xai_responses") is True
+        base_url = params.get("base_url", "") or ""
+        is_azure_responses = base_url_host_matches(base_url, "openai.azure.com")
         replay_encrypted_reasoning = bool(
             params.get("replay_encrypted_reasoning", True)
         )
@@ -247,6 +258,7 @@ class ResponsesApiTransport(ProviderTransport):
                 payload_messages,
                 is_xai_responses=is_xai_responses,
                 is_github_responses=is_github_responses,
+                is_azure_responses=is_azure_responses,
                 replay_encrypted_reasoning=replay_encrypted_reasoning,
                 current_issuer_kind=issuer_kind,
             ),
@@ -452,6 +464,7 @@ class ResponsesApiTransport(ProviderTransport):
         *,
         allow_stream: bool = False,
         is_github_responses: bool = False,
+        is_azure_responses: bool = False,
     ) -> dict:
         """Validate and sanitize Codex API kwargs before the call.
 
@@ -462,6 +475,7 @@ class ResponsesApiTransport(ProviderTransport):
             api_kwargs,
             allow_stream=allow_stream,
             is_github_responses=is_github_responses,
+            is_azure_responses=is_azure_responses,
         )
 
     def map_finish_reason(self, raw_reason: str) -> str:

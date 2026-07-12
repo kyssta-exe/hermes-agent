@@ -315,6 +315,7 @@ def _chat_messages_to_responses_input(
     *,
     is_xai_responses: bool = False,
     is_github_responses: bool = False,
+    is_azure_responses: bool = False,
     replay_encrypted_reasoning: bool = True,
     current_issuer_kind: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
@@ -429,12 +430,18 @@ def _chat_messages_to_responses_input(
                             # Responses API cannot look up items by ID and
                             # returns 404.  The encrypted_content blob is
                             # self-contained for reasoning chain continuity.
+                            # Azure AI Foundry Responses requires the id to
+                            # be retained; skip stripping when targeting
+                            # Azure.
                             # Also strip the internal "_issuer_kind" stamp;
                             # it is a Hermes-side metadata key and not part
                             # of the Responses API schema.
+                            skip_keys = {"_issuer_kind"}
+                            if not is_azure_responses:
+                                skip_keys.add("id")
                             replay_item = {
                                 k: v for k, v in ri.items()
-                                if k not in ("id", "_issuer_kind")
+                                if k not in skip_keys
                             }
                             items.append(replay_item)
                             if item_id:
@@ -604,6 +611,7 @@ def _preflight_codex_input_items(
     raw_items: Any,
     *,
     is_github_responses: bool = False,
+    is_azure_responses: bool = False,
 ) -> List[Dict[str, Any]]:
     if not isinstance(raw_items, list):
         raise ValueError("Codex Responses input must be a list of input items.")
@@ -704,6 +712,10 @@ def _preflight_codex_input_items(
                 # store=False (our default) the API tries to resolve the
                 # id server-side and returns 404.  The id is still used
                 # above for local deduplication via seen_ids.
+                # Azure AI Foundry Responses requires the id to be
+                # retained; skip stripping when targeting Azure.
+                if is_azure_responses and isinstance(item_id, str) and item_id:
+                    reasoning_item["id"] = item_id
                 summary = item.get("summary")
                 if isinstance(summary, list):
                     reasoning_item["summary"] = summary
@@ -825,6 +837,7 @@ def _preflight_codex_api_kwargs(
     *,
     allow_stream: bool = False,
     is_github_responses: bool = False,
+    is_azure_responses: bool = False,
 ) -> Dict[str, Any]:
     if not isinstance(api_kwargs, dict):
         raise ValueError("Codex Responses request must be a dict.")
@@ -849,6 +862,7 @@ def _preflight_codex_api_kwargs(
     normalized_input = _preflight_codex_input_items(
         api_kwargs.get("input"),
         is_github_responses=is_github_responses,
+        is_azure_responses=is_azure_responses,
     )
 
     tools = api_kwargs.get("tools")
