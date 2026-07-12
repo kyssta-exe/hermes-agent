@@ -132,6 +132,7 @@ _pending_prompt_payloads: dict[str, tuple[str, dict]] = {}
 _answers: dict[str, str] = {}
 _db = None
 _db_error: str | None = None
+_profile_dbs: dict[Path, Any] = {}
 _stdout_lock = threading.Lock()
 _cfg_lock = threading.Lock()
 _sessions_lock = threading.RLock()  # reentrant: _close_session_by_id may run under callers that already hold it
@@ -1015,6 +1016,34 @@ def _profile_home(profile: str | None) -> Path | None:
     if home.resolve() == Path(_hermes_home).resolve():
         return None
     return home if (home / "state.db").exists() or home.exists() else None
+
+
+def _get_profile_db(profile: str | None) -> Any:
+    """Open a read-only SessionDB for the given profile, or the global DB for the launch profile.
+
+    Returns the global ``_get_db()`` when *profile* is None/empty/launch-profile, or
+    a new read-only SessionDB tied to that profile's state.db.  The result is cached
+    so subsequent calls for the same profile reuse the same connection.
+    """
+    global _profile_dbs
+    home = _profile_home(profile)
+    if home is None:
+        return _get_db()
+    state_db = home / "state.db"
+    if not state_db.exists():
+        return None
+    try:
+        from hermes_state import SessionDB as _SessionDB
+    except ImportError:
+        return _get_db()
+    if state_db in _profile_dbs:
+        return _profile_dbs[state_db]
+    try:
+        db = _SessionDB(db_path=state_db, read_only=True)
+        _profile_dbs[state_db] = db
+        return db
+    except Exception:
+        return _get_db()
 
 
 def _profile_scoped(handler):
@@ -5298,7 +5327,7 @@ def _(rid, params: dict) -> dict:
                 "branch": _git_branch_for_cwd(_sessions[sid]["cwd"]),
                 "lazy": True,
                 "desktop_contract": DESKTOP_BACKEND_CONTRACT,
-                "profile_name": _current_profile_name(),
+                "profile_name": profile or _current_profile_name(),
             },
         },
     )
@@ -5306,7 +5335,7 @@ def _(rid, params: dict) -> dict:
 
 @method("session.list")
 def _(rid, params: dict) -> dict:
-    db = _get_db()
+    db = _get_profile_db(params.get("profile"))
     if db is None:
         return _db_unavailable_error(rid, code=5006)
     try:
@@ -5365,7 +5394,7 @@ def _(rid, params: dict) -> dict:
     null-result shape (and logged) so callers don't have to special-
     case JSON-RPC error envelopes for what is a normal "no answer".
     """
-    db = _get_db()
+    db = _get_profile_db(params.get("profile"))
     if db is None:
         return _ok(rid, {"session_id": None})
     try:
@@ -5436,7 +5465,7 @@ def _(rid, params: dict) -> dict:
         return _ok(rid, {"verification": {"status": "unknown", "evidence": None}})
 
 
-def _lazy_resume_info(cwd: str, *, model: str = "", provider: str = "") -> dict:
+def _lazy_resume_info(cwd: str, *, model: str = "", provider: str = "", profile: str = "") -> dict:
     """session.info for a not-yet-built session (the shape session.create
     returns). tools/skills land later when the deferred build emits session.info."""
     info = {
@@ -5447,7 +5476,7 @@ def _lazy_resume_info(cwd: str, *, model: str = "", provider: str = "") -> dict:
         "skills": {},
         "lazy": True,
         "desktop_contract": DESKTOP_BACKEND_CONTRACT,
-        "profile_name": _current_profile_name(),
+        "profile_name": profile or _current_profile_name(),
     }
     if provider:
         info["provider"] = provider
@@ -7767,7 +7796,7 @@ def _(rid, params: dict) -> dict:
     key = session.get("session_key") or params.get("session_id") or ""
     agent = session.get("agent")
     meta = {}
-    db = _get_db()
+    db = _get_profile_db(params.get("profile"))
     if db and key:
         try:
             meta = db.get_session(key) or {}
@@ -7819,7 +7848,7 @@ def _(rid, params: dict) -> dict:
     if err:
         return err
     history = list(session.get("history", []))
-    db = _get_db()
+    db = _get_profile_db(params.get("profile"))
     if db is not None and session.get("session_key"):
         try:
             history = db.get_messages_as_conversation(
