@@ -624,6 +624,27 @@ def _rpc_server_loop(
 # Remote execution support (file-based RPC via terminal backend)
 # ---------------------------------------------------------------------------
 
+def _cached_env_type_matches(env, expected_env_type: str) -> bool:
+    """Check if a cached environment object matches the expected env_type.
+
+    Maps class names to the env_type strings used by _get_env_config()
+    so that _get_or_create_env can detect when the backend config
+    has changed (e.g. local → ssh) and recreate the environment instead
+    of silently reusing a stale one on the wrong host.
+    """
+    name = type(env).__name__
+    _ENV_TYPE_MAP = {
+        "LocalEnvironment": "local",
+        "SSHEnvironment": "ssh",
+        "DockerEnvironment": "docker",
+        "SingularityEnvironment": "singularity",
+        "ModalEnvironment": "modal",
+        "ManagedModalEnvironment": "modal",
+        "DaytonaEnvironment": "daytona",
+    }
+    return _ENV_TYPE_MAP.get(name) == expected_env_type
+
+
 def _get_or_create_env(task_id: str):
     """Get or create the terminal environment for *task_id*.
 
@@ -644,7 +665,28 @@ def _get_or_create_env(task_id: str):
     with _env_lock:
         if effective_task_id in _active_environments:
             _last_activity[effective_task_id] = time.time()
-            return _active_environments[effective_task_id], _get_env_config()["env_type"]
+            cached_env = _active_environments[effective_task_id]
+            current_env_type = _get_env_config()["env_type"]
+            # Bug #62720: verify the cached environment's type matches the
+            # current backend config.  Without this check, a later session
+            # that switches backends (e.g. local → ssh) silently reuses a
+            # stale environment from the old config, running shell/file
+            # tools on the wrong host.
+            if _cached_env_type_matches(cached_env, current_env_type):
+                return cached_env, current_env_type
+            # Env type mismatch — close the stale environment and fall
+            # through to the slow path so a new one is created.
+            logger.info(
+                "Environment type mismatch for task %s: cached=%s, config=%s — recreating",
+                effective_task_id[:8],
+                type(cached_env).__name__,
+                current_env_type,
+            )
+            try:
+                cached_env.cleanup()
+            except Exception:
+                pass
+            del _active_environments[effective_task_id]
 
     # Slow path: create environment (same pattern as file_tools._get_file_ops)
     with _creation_locks_lock:
@@ -656,7 +698,17 @@ def _get_or_create_env(task_id: str):
         with _env_lock:
             if effective_task_id in _active_environments:
                 _last_activity[effective_task_id] = time.time()
-                return _active_environments[effective_task_id], _get_env_config()["env_type"]
+                cached = _active_environments[effective_task_id]
+                config_type = _get_env_config()["env_type"]
+                if _cached_env_type_matches(cached, config_type):
+                    return cached, config_type
+                # Mismatch — this env was created by another session with
+                # a different backend config; discard and recreate below.
+                try:
+                    cached.cleanup()
+                except Exception:
+                    pass
+                del _active_environments[effective_task_id]
 
         config = _get_env_config()
         env_type = config["env_type"]
