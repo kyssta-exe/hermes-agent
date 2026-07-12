@@ -190,7 +190,6 @@ COPY ui-tui/ ui-tui/
 COPY apps/shared/ apps/shared/
 RUN cd web && npm run build && \
     cd ../ui-tui && npm run build
-
 # ---------- Source code ----------
 # .dockerignore excludes node_modules, so the installs above survive.
 # --chmod bakes the final read-only permissions at copy time so we skip the
@@ -206,6 +205,11 @@ COPY --chmod=a+rX,go-w . .
 # cached layer above; `--no-deps` makes this a fast egg-link creation with no
 # resolution or downloads.
 RUN uv pip install --no-cache-dir --no-deps -e "."
+
+# Photon sidecar requires write access for the hermes user so npm install
+# can create node_modules/ at setup / container-start time (#62975).
+RUN chown -R root:hermes /opt/hermes/plugins/platforms/photon/sidecar && \
+    chmod -R g+w /opt/hermes/plugins/platforms/photon/sidecar
 
 # Wire the exec shim and install-method stamp.  Files under /opt/hermes are
 # already root-owned (COPY, uv sync, npm install all run as root) and
