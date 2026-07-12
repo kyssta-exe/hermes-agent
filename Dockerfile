@@ -189,22 +189,26 @@ COPY web/ web/
 COPY ui-tui/ ui-tui/
 COPY apps/shared/ apps/shared/
 RUN cd web && npm run build && \
-    cd ../ui-tui && npm run build
-# ---------- Source code ----------
-# .dockerignore excludes node_modules, so the installs above survive.
-# --chmod bakes the final read-only permissions at copy time so we skip the
-# separate `chmod -R` pass that previously walked ~30k files across the venv +
-# node_modules + source (21s amd64 / 222s arm64 — #49113).  `a+rX,go-w` gives
-# the non-root hermes user read + traverse but no write; root retains write so
-# the build steps below don't need chmod u+w dances.
-# NOTE: `--link` was removed because Buildah/Podman does not support it (#62849).
-COPY --chmod=a+rX,go-w . .
+    # ---------- Source code ----------
+    # .dockerignore excludes node_modules, so the installs above survive.
+    # --chmod bakes the final read-only permissions at copy time so we skip the
+    # separate `chmod -R` pass that previously walked ~30k files across the venv +
+    # node_modules + source (21s amd64 / 222s arm64 — #49113).  `a+rX,go-w` gives
+    # the non-root hermes user read + traverse but no write; root retains write so
+    # the build steps below don't need chmod u+w dances.
+    # NOTE: `--link` was removed because Buildah/Podman does not support it (#62849).
+    COPY --chmod=a+rX,go-w . .
 
 # ---------- Permissions ----------
 # Link hermes-agent itself (editable). Deps are already installed in the
 # cached layer above; `--no-deps` makes this a fast egg-link creation with no
 # resolution or downloads.
 RUN uv pip install --no-cache-dir --no-deps -e "."
+
+# Photon sidecar requires write access for the hermes user so npm install
+# can create node_modules/ at setup / container-start time (#62975).
+RUN chown -R root:hermes /opt/hermes/plugins/platforms/photon/sidecar && \
+    chmod -R g+w /opt/hermes/plugins/platforms/photon/sidecar
 
 # Photon sidecar requires write access for the hermes user so npm install
 # can create node_modules/ at setup / container-start time (#62975).
