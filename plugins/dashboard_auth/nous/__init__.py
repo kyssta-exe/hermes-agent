@@ -420,6 +420,10 @@ class NousDashboardAuthProvider(DashboardAuthProvider):
                 self._jwks_url,
                 cache_keys=True,
                 lifespan=_JWKS_CACHE_SECONDS,
+                headers={
+                    "User-Agent": "Hermes-Agent/1.0",
+                    "Accept": "application/json",
+                },
             )
         return self._jwks_client
 
