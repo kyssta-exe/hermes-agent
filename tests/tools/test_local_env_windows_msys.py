@@ -165,17 +165,19 @@ class TestUpdateCwdWindowsMsys:
         new_dir = tmp_path / "next"
         new_dir.mkdir()
 
-        with open(env._cwd_file, "w") as f:
-            f.write("/c/whatever/from/bash")
-
-        # Translate the synthetic MSYS string to the real native dir.
+        # CWD is now parsed from the stdout marker, not from the temp file.
+        # Simulate the marker in stdout like the shell bootstrap would emit.
+        marker = env._cwd_marker
+        # _msys_to_windows_path is called inside the override
+        # _extract_cwd_from_output when _IS_WINDOWS is True.
         def fake_translate(p):
             if p == "/c/whatever/from/bash":
                 return str(new_dir)
             return p
 
         with patch.object(local_mod, "_msys_to_windows_path", side_effect=fake_translate):
-            env._update_cwd({"output": "", "returncode": 0})
+            output = f"\n{marker}/c/whatever/from/bash{marker}\n"
+            env._update_cwd({"output": output, "returncode": 0})
 
         assert env.cwd == str(new_dir)
 
