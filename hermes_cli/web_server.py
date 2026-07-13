@@ -17083,6 +17083,16 @@ def start_server(
             ", ".join(p.name for p in list_providers()),
         )
 
+    # Bridge terminal.backend config into the process environment so the
+    # terminal tool used by the serve process respects docker/ssh config
+    # from config.yaml, not just the default local backend.
+    try:
+        from hermes_cli.config import apply_terminal_config_to_env
+
+        apply_terminal_config_to_env()
+    except Exception:
+        _log.debug("Failed to apply terminal config bridge for serve process", exc_info=True)
+
     # Record the bound host so host_header_middleware can validate incoming
     # Host headers against it. Defends against DNS rebinding (GHSA-ppp5-vxwm-4cf7).
     app.state.bound_host = host
