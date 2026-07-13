@@ -49,6 +49,8 @@ import threading
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
+from hermes_constants import is_wsl as _is_wsl
+
 from tools.computer_use.backend import (
     ActionResult,
     CaptureResult,
@@ -141,6 +143,37 @@ def cua_driver_child_env(base_env: Optional[Dict[str, str]] = None) -> Dict[str,
     return env
 
 
+def _looks_like_windows_path(path: str) -> bool:
+    """Return True if *path* looks like a native Windows filesystem path
+    (e.g. ``C:\\Users\\...`` or ``C:/Users/...``).
+
+    Used by ``_resolve_mcp_invocation`` to detect a Windows-form binary path
+    returned by a native Windows cua-driver manifest when Hermes is running
+    under WSL. (#63938)
+    """
+    return len(path) >= 3 and path[1] == ":" and path[0].isalpha() and path[2] in ("\\", "/")
+
+
+def _wsl_translate_path(path: str) -> str:
+    """Translate a native Windows path (e.g. ``C:\\Users\\...``) to the
+    equivalent WSL mount path (``/mnt/c/Users/...``).
+
+    Does NOT call ``wslpath`` (which requires a Windows-side helper) —
+    instead applies the standard WSL drive-letter-to-/mnt/ mapping that
+    has been stable since WSL1. Drives A-Z are lowercased and mapped to
+    ``/mnt/<drive>/<rest>`` with backslashes converted to forward slashes.
+
+    Args:
+        path: A Windows path like ``C:\\Users\\me\\cua-driver.exe``.
+
+    Returns:
+        The translated WSL path like ``/mnt/c/Users/me/cua-driver.exe``.
+    """
+    drive = path[0].lower()
+    rest = path[3:].replace("\\", "/")
+    return f"/mnt/{drive}/{rest.lstrip('/')}"
+
+
 def _resolve_mcp_invocation(
     driver_cmd: str,
     *,
@@ -192,6 +225,12 @@ def _resolve_mcp_invocation(
         # The driver knows the subcommand but didn't surface its own path.
         # Keep our resolved driver_cmd; the args are still authoritative.
         return driver_cmd, args
+    # WSL path translation: when running under WSL and the driver returns a
+    # Windows-form path (e.g. ``C:\Users\...\cua-driver.exe``), translate
+    # it to the WSL mount path (``/mnt/c/Users/.../cua-driver.exe``) so the
+    # Linux subprocess can exec it. (#63938)
+    if _is_wsl() and _looks_like_windows_path(command):
+        command = _wsl_translate_path(command)
     return command, args
 
 # Regex to parse element lines from get_window_state AX tree markdown.
