@@ -17008,6 +17008,13 @@ def start_server(
     except Exception as exc:
         _log.debug("Nous auth keepalive did not start: %s", exc)
 
+    try:
+        from hermes_cli.config import apply_terminal_config_to_env
+
+        apply_terminal_config_to_env()
+    except Exception:
+        _log.debug("Failed to apply terminal config to env", exc_info=True)
+
     # Phase 0: stash the auth-gate flag on app.state so middleware / SPA-token
     # injection / WS-auth paths can branch on it consistently.  Phase 3.5
     # uses this to decide whether to refuse the bind, log the gate-on
@@ -17022,8 +17029,8 @@ def start_server(
         _log.warning(
             "--insecure no longer bypasses dashboard authentication. A "
             "non-loopback bind (%s) now ALWAYS requires an auth provider "
-            "(OAuth or the bundled password provider). Configure one — see "
-            "below — or bind to 127.0.0.1 and reach it over an SSH tunnel / "
+            "(OAuth or the bundled password provider). Configure one \u2014 see "
+            "below \u2014 or bind to 127.0.0.1 and reach it over an SSH tunnel / "
             "Tailscale.", host,
         )
 
