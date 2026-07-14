@@ -17067,6 +17067,18 @@ def start_server(
     except Exception as exc:
         _log.debug("Nous auth keepalive did not start: %s", exc)
 
+    # Bridge terminal.* config into process environment so the serve
+    # process (and any child processes it spawns) use the configured
+    # terminal backend (e.g. Docker) instead of defaulting to local.
+    # Without this, `hermes serve` ignores terminal.backend and every
+    # tool call runs on the host (#63141).
+    try:
+        from hermes_cli.config import apply_terminal_config_to_env
+
+        apply_terminal_config_to_env()
+    except Exception as exc:
+        _log.debug("Failed to apply terminal config bridge: %s", exc)
+
     # Phase 0: stash the auth-gate flag on app.state so middleware / SPA-token
     # injection / WS-auth paths can branch on it consistently.  Phase 3.5
     # uses this to decide whether to refuse the bind, log the gate-on
