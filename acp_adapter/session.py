@@ -423,6 +423,11 @@ class SessionManager:
         model_str = str(state.model) if state.model else None
         session_meta = {"cwd": state.cwd}
         provider = getattr(state.agent, "provider", None)
+        # Use the original requested provider (e.g. "custom:anthropic") instead
+        # of the normalized "custom" so ACP session restore can match named
+        # custom_providers entries. Falls back to agent.provider for agents
+        # that were not created via ACP _make_agent.
+        provider = getattr(state.agent, "_acp_requested_provider", None) or provider
         base_url = getattr(state.agent, "base_url", None)
         api_mode = getattr(state.agent, "api_mode", None)
         if isinstance(provider, str) and provider.strip():
@@ -650,4 +655,10 @@ class SessionManager:
         # ACP stdio transport requires stdout to remain protocol-only JSON-RPC.
         # Route any incidental human-readable agent output to stderr instead.
         agent._print_fn = _acp_stderr_print
+        # Preserve the original requested provider name (e.g. "custom:anthropic")
+        # so ACP session persist stores the full namespace-qualified name, not
+        # the normalized "custom" — fixes restore of named custom providers.
+        _req_prov = runtime.get("requested_provider", "")
+        if _req_prov:
+            agent._acp_requested_provider = _req_prov
         return agent
