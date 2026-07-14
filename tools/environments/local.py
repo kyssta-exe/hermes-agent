@@ -1231,31 +1231,16 @@ class LocalEnvironment(BaseEnvironment):
                 pass
 
     def _update_cwd(self, result: dict):
-        """Read CWD from temp file (local-only, no round-trip needed).
+        """Read CWD from stdout marker (already emitted by shell bootstrap).
 
-        Skip the assignment when the path no longer exists as a directory —
-        ``pwd -P`` on a deleted cwd can leave a stale value in the marker
-        file, and propagating it would re-wedge the next ``Popen``.  The
-        ``_run_bash`` recovery path will resolve a safe fallback if needed.
-
-        On Windows, the value written by Git Bash's ``pwd -P`` is in
-        MSYS form (``/c/Users/x``). Translate it to native Windows form
-        before validating with ``os.path.isdir`` and before storing on
-        ``self.cwd``; otherwise the isdir check rejects every valid
-        result and ``_run_bash`` later prints a misleading "cwd is
-        missing" warning on every command.
+        The shell bootstrap writes the working directory to both a temp file
+        and a ``__HERMES_CWD_<session>__`` stdout marker.  The base class
+        already parses the marker via ``_extract_cwd_from_output`` — reading
+        the temp file back is redundant I/O.  Delegate entirely to the
+        marker parser instead.
         """
-        try:
-            with open(self._cwd_file, encoding="utf-8") as f:
-                cwd_path = f.read().strip()
-            if _IS_WINDOWS:
-                cwd_path = _msys_to_windows_path(cwd_path)
-            if cwd_path and os.path.isdir(cwd_path):
-                self.cwd = cwd_path
-        except (OSError, FileNotFoundError):
-            pass
-
-        # Still strip the marker from output so it's not visible
+        # Delegate to the base marker-parser which is already used by every
+        # remote backend — no need for an extra temp-file read.
         self._extract_cwd_from_output(result)
 
     def _extract_cwd_from_output(self, result: dict):
