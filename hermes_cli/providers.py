@@ -222,6 +222,10 @@ HERMES_OVERLAYS: Dict[str, HermesOverlay] = {
         transport="bedrock_converse",
         auth_type="aws_sdk",
     ),
+    "vertex": HermesOverlay(
+        transport="openai_chat",
+        auth_type="gcp_sdk",
+    ),
 }
 
 
@@ -370,6 +374,11 @@ ALIASES: Dict[str, str] = {
     "llamacpp": "local",
     "llama.cpp": "local",
     "llama-cpp": "local",
+    # vertex
+    "google-vertex": "vertex",
+    "vertex-ai": "vertex",
+    "gcp-vertex": "vertex",
+    "vertexai": "vertex",
 }
 
 
@@ -392,6 +401,7 @@ _LABEL_OVERRIDES: Dict[str, str] = {
     "bedrock": "AWS Bedrock",
     "ollama-cloud": "Ollama Cloud",
     "xai-oauth": "xAI Grok OAuth (SuperGrok / Premium+)",
+    "vertex": "Google Vertex AI",
 }
 
 
