@@ -6,7 +6,7 @@ import { $terminalTakeover, setTerminalTakeover } from '@/app/right-sidebar/stor
 import { closeActiveTerminal, createTerminal, cycleTerminal } from '@/app/right-sidebar/terminal/terminals'
 import { activateTreeTabSlot, cycleTreeTabInFocusedZone, layoutHasRootSide } from '@/components/pane-shell/tree/store'
 import { contributedKeybindHandler, PROFILE_SLOT_COUNT, SESSION_SLOT_COUNT } from '@/lib/keybinds/actions'
-import { comboAllowedInInput, comboFromEvent, isEditableTarget } from '@/lib/keybinds/combo'
+import { comboAllowedInInput, comboFromEvent, isEditableTarget, isFocusWithin } from '@/lib/keybinds/combo'
 import { $repoStatus } from '@/store/coding-status'
 import { toggleCommandPalette } from '@/store/command-palette'
 import { $capture, $comboIndex, endCapture, setBinding, toggleKeybindPanel } from '@/store/keybinds'
@@ -247,6 +247,13 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
       }
 
       if (isEditableTarget(event.target) && !comboAllowedInInput(combo)) {
+        return
+      }
+
+      // Terminal-focused: view.closeTab (Ctrl+W / Cmd+W) is a readline
+      // delete-word-back command inside a terminal, not a close-tab shortcut.
+      // Let the keystroke pass through so xterm.js sends it to the shell.
+      if (actionId === 'view.closeTab' && isFocusWithin('[data-terminal]')) {
         return
       }
 
