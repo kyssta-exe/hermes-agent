@@ -115,7 +115,19 @@ _NO_XHIGH_CLAUDE_SUBSTRINGS = (
 
 
 def _is_claude_model(model: str | None) -> bool:
-    return "claude" in (model or "").lower()
+    if not model:
+        return False
+    m = model.lower()
+    if "claude" in m:
+        return True
+    # Ambiguous/aliased model names (e.g. "auto", "latest") routed through an
+    # Anthropic-Messages proxy — default to Claude unless the name matches a
+    # known non-Claude Anthropic-compatible model prefix.
+    if m.startswith("minimax") or m.startswith("qwen") or m.startswith("glm"):
+        return False
+    if "kimi" in m or "moonshot" in m:
+        return False
+    return True
 
 
 _FAST_MODE_SUPPORTED_SUBSTRINGS = ("opus-4-6", "opus-4.6")

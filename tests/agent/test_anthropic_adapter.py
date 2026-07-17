@@ -1615,6 +1615,23 @@ class TestBuildAnthropicKwargs:
             assert _supports_xhigh_effort(m) is False, m
             assert _forbids_sampling_params(m) is False, m
 
+    def test_aliased_model_names_default_to_adaptive(self):
+        """Aliased/ambiguous model names (e.g. "auto") routed through an
+        Anthropic-Messages proxy must default to the modern adaptive contract.
+        Otherwise legacy thinking format is sent and adaptive-only model groups
+        reject it with HTTP 400 (non-retryable in delegate_task)."""
+        from agent.anthropic_adapter import (
+            _is_claude_model,
+            _supports_adaptive_thinking,
+            _supports_xhigh_effort,
+            _forbids_sampling_params,
+        )
+        for m in ("auto", "latest", "best"):
+            assert _is_claude_model(m) is True, m
+            assert _supports_adaptive_thinking(m) is True, m
+            assert _supports_xhigh_effort(m) is True, m
+            assert _forbids_sampling_params(m) is True, m
+
     def test_fast_mode_omitted_for_unsupported_model(self):
         """fast_mode=True on Opus 4.7 must NOT inject speed=fast (API 400s)."""
         kwargs = build_anthropic_kwargs(
