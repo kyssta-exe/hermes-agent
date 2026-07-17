@@ -518,7 +518,13 @@ bindTreeSideVisibility('right', $fileBrowserOpen, setFileBrowserOpen)
 // rode the rail's row and vanished with it), its zone stands on its own.
 const $hasWorkspace = computed($currentCwd, cwd => Boolean(cwd.trim()))
 
-bindPaneVisibility('files', $hasWorkspace)
+// The files pane is workspace-scoped but must NOT auto-open a collapsed
+// right sidebar when the workspace becomes available — the user's own
+// $fileBrowserOpen toggle controls visibility. quiet=true skips
+// force-opening the collapsed side via revealTreePane.
+const syncFilesWorkspace = (hasWorkspace: boolean) => setTreePaneHidden('files', !hasWorkspace, true)
+syncFilesWorkspace($hasWorkspace.get())
+$hasWorkspace.listen(syncFilesWorkspace)
 // ⌘G — the review sidebar appears/disappears (and comes to the front).
 bindPaneVisibility(
   'review',

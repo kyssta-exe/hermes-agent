@@ -117,7 +117,7 @@ function toggledSet<T>(set: ReadonlySet<T>, item: T, present: boolean): Set<T> |
   return next
 }
 
-export function setTreePaneHidden(paneId: string, hidden: boolean) {
+export function setTreePaneHidden(paneId: string, hidden: boolean, quiet?: boolean) {
   const next = toggledSet($hiddenTreePanes.get(), paneId, hidden)
 
   if (!next) {
@@ -127,7 +127,10 @@ export function setTreePaneHidden(paneId: string, hidden: boolean) {
   $hiddenTreePanes.set(next)
 
   // Unhiding is an intent to SEE the pane — front it in its group.
-  if (!hidden) {
+  // quiet=true skips the reveal for workspace-scoped panes that should not
+  // force-open a collapsed side (e.g. the file tree when a workspace becomes
+  // available — the user's own toggle controls visibility).
+  if (!hidden && !quiet) {
     revealTreePane(paneId)
   }
 }
