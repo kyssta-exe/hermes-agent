@@ -334,3 +334,87 @@ class TestModelDriftGuard:
             )
         assert agent_constructed is True
         assert success is True
+
+
+def _run_with_disabled_drift_guard(job, current_provider, tmp_path):
+    """Drive run_job with cron.drift_guard: false in config.yaml.
+
+    The drift guard must be bypassed even when the snapshot differs from
+    the currently-resolved provider.
+    """
+    (tmp_path / "config.yaml").write_text(
+        "cron:\n  drift_guard: false\n"
+    )
+    fake_db = MagicMock()
+    with patch("cron.scheduler._hermes_home", tmp_path), \
+         patch("cron.scheduler._get_hermes_home", return_value=tmp_path), \
+         patch("cron.scheduler._resolve_origin", return_value=None), \
+         patch("hermes_cli.env_loader.load_hermes_dotenv"), \
+         patch("hermes_cli.env_loader.reset_secret_source_cache"), \
+         patch("hermes_state.SessionDB", return_value=fake_db), \
+         patch(
+             "hermes_cli.runtime_provider.resolve_runtime_provider",
+             return_value={
+                 "api_key": "test-key",
+                 "base_url": "https://example.invalid/v1",
+                 "provider": current_provider,
+                 "api_mode": "chat_completions",
+             },
+         ), \
+         patch("run_agent.AIAgent") as mock_agent_cls:
+        mock_agent = MagicMock()
+        mock_agent.run_conversation.return_value = {"final_response": "ok"}
+        mock_agent_cls.return_value = mock_agent
+        success, output, final_response, error = run_job(job)
+        agent_constructed = mock_agent_cls.called
+    return success, output, final_response, error, agent_constructed
+
+
+class TestDriftGuardDisabled:
+    """When cron.drift_guard: false, unpinned jobs follow the global default
+    regardless of snapshot mismatch (#67490)."""
+
+    def test_disabled_allows_provider_drift(self, tmp_path):
+        """cron.drift_guard: false → unpinned provider drift is allowed."""
+        job = _base_job(provider_snapshot="openrouter")
+        success, output, final_response, error, agent_constructed = \
+            _run_with_disabled_drift_guard(job, "nous", tmp_path)
+        assert agent_constructed is True
+        assert success is True
+        assert error is None
+
+    def test_disabled_allows_model_drift(self, tmp_path):
+        """cron.drift_guard: false → unpinned model drift is allowed."""
+        job = _base_job(
+            provider_snapshot="openrouter",
+            model_snapshot="llama-3.3-70b-instruct:free",
+        )
+        (tmp_path / "config.yaml").write_text(
+            "cron:\n  drift_guard: false\n"
+            "model:\n  default: claude-fable-5\n"
+        )
+        fake_db = MagicMock()
+        with patch("cron.scheduler._hermes_home", tmp_path), \
+             patch("cron.scheduler._get_hermes_home", return_value=tmp_path), \
+             patch("cron.scheduler._resolve_origin", return_value=None), \
+             patch("hermes_cli.env_loader.load_hermes_dotenv"), \
+             patch("hermes_cli.env_loader.reset_secret_source_cache"), \
+             patch("hermes_state.SessionDB", return_value=fake_db), \
+             patch(
+                 "hermes_cli.runtime_provider.resolve_runtime_provider",
+                 return_value={
+                     "api_key": "test-key",
+                     "base_url": "https://example.invalid/v1",
+                     "provider": "openrouter",
+                     "api_mode": "chat_completions",
+                 },
+             ), \
+             patch("run_agent.AIAgent") as mock_agent_cls:
+            mock_agent = MagicMock()
+            mock_agent.run_conversation.return_value = {"final_response": "ok"}
+            mock_agent_cls.return_value = mock_agent
+            success, output, final_response, error = run_job(job)
+            agent_constructed = mock_agent_cls.called
+        assert agent_constructed is True
+        assert success is True
+        assert error is None

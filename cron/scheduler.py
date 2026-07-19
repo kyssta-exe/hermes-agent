@@ -3237,7 +3237,8 @@ def run_job(
             _cfg if isinstance(_cfg, dict) else {}, str(model)
         )
 
-        # Provider/model-drift fail-closed guard (#44585).
+        # Provider/model-drift fail-closed guard (#44585), skippable via
+        # config.yaml ``cron.drift_guard: false`` (#67490).
         #
         # An UNPINNED job (no explicit job["provider"]/["model"]) follows the
         # global default, which can change after the job was created — a switch
@@ -3257,41 +3258,46 @@ def run_job(
         # any axis whose creation-time resolution failed) behaves exactly as
         # before — the guard never engages for it. Pinned axes are unaffected.
         _drift: list[str] = []
-        _provider_snapshot = (job.get("provider_snapshot") or "").strip().lower()
-        if _provider_snapshot and not (job.get("provider") or "").strip():
-            _current_provider = str(
-                primary_provider_for_drift or runtime.get("provider") or ""
-            ).strip().lower()
-            if _current_provider and _current_provider != _provider_snapshot:
-                _drift.append(
-                    f"provider '{_provider_snapshot}' -> '{_current_provider}'"
+        _cron_cfg = _cfg.get("cron", {}) if isinstance(_cfg, dict) else {}
+        _drift_guard_enabled = bool(
+            _cron_cfg.get("drift_guard", True)
+        )
+        if _drift_guard_enabled:
+            _provider_snapshot = (job.get("provider_snapshot") or "").strip().lower()
+            if _provider_snapshot and not (job.get("provider") or "").strip():
+                _current_provider = str(
+                    primary_provider_for_drift or runtime.get("provider") or ""
+                ).strip().lower()
+                if _current_provider and _current_provider != _provider_snapshot:
+                    _drift.append(
+                        f"provider '{_provider_snapshot}' -> '{_current_provider}'"
+                    )
+            _model_snapshot = (job.get("model_snapshot") or "").strip().lower()
+            if _model_snapshot and not (job.get("model") or "").strip():
+                _current_model = str(primary_model_for_drift or "").strip().lower()
+                if _current_model and _current_model != _model_snapshot:
+                    _drift.append(
+                        f"model '{_model_snapshot}' -> '{_current_model}'"
+                    )
+            if _drift:
+                _changes = "; ".join(_drift)
+                logger.warning(
+                    "Job '%s': SKIPPED — global inference config drifted since "
+                    "creation (%s) and this job is unpinned. Skipped to prevent "
+                    "unintended spend. Pin explicitly to proceed: "
+                    "`cronjob action=update job_id=%s provider=<p> model=<m>`.",
+                    job_id,
+                    _changes,
+                    job_id,
                 )
-        _model_snapshot = (job.get("model_snapshot") or "").strip().lower()
-        if _model_snapshot and not (job.get("model") or "").strip():
-            _current_model = str(primary_model_for_drift or "").strip().lower()
-            if _current_model and _current_model != _model_snapshot:
-                _drift.append(
-                    f"model '{_model_snapshot}' -> '{_current_model}'"
+                raise RuntimeError(
+                    f"Skipped to prevent unintended spend: global inference config "
+                    f"drifted since this job was created ({_changes}), and this job "
+                    f"is unpinned. No inference call was made. To run on the new "
+                    f"config, pin it explicitly: `cronjob action=update "
+                    f"job_id={job_id} provider=<provider> model=<model>` "
+                    f"(or pin the original values to keep them). See #44585."
                 )
-        if _drift:
-            _changes = "; ".join(_drift)
-            logger.warning(
-                "Job '%s': SKIPPED — global inference config drifted since "
-                "creation (%s) and this job is unpinned. Skipped to prevent "
-                "unintended spend. Pin explicitly to proceed: "
-                "`cronjob action=update job_id=%s provider=<p> model=<m>`.",
-                job_id,
-                _changes,
-                job_id,
-            )
-            raise RuntimeError(
-                f"Skipped to prevent unintended spend: global inference config "
-                f"drifted since this job was created ({_changes}), and this job "
-                f"is unpinned. No inference call was made. To run on the new "
-                f"config, pin it explicitly: `cronjob action=update "
-                f"job_id={job_id} provider=<provider> model=<model>` "
-                f"(or pin the original values to keep them). See #44585."
-            )
 
         fallback_model = get_fallback_chain(_cfg) or None
         credential_pool = None
