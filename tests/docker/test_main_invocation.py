@@ -55,6 +55,48 @@ def test_bash_pattern(built_image: str) -> None:
     assert "ok" in r.stdout
 
 
+def test_group_add_survives_main_wrapper_privilege_drop(
+    built_image: str,
+) -> None:
+    """Docker-granted groups must survive ``s6-setuidgid hermes``.
+
+    The command runs through the image's real s6 lifecycle and
+    ``main-wrapper.sh``. Without the stage2 repair, ``s6-setuidgid`` calls
+    ``initgroups()`` and silently drops GID 1001 because it has no matching
+    membership in the image's ``/etc/group``.
+    """
+    r = subprocess.run(
+        [
+            "docker", "run", "--rm", "--group-add", "1001", built_image,
+            "sh", "-c",
+            "printf 'RUNTIME_UID='; id -u; printf 'RUNTIME_GROUPS='; id -G",
+        ],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert r.returncode == 0, (
+        f"docker run failed: stdout={r.stdout!r} stderr={r.stderr!r}"
+    )
+    runtime_uid_lines = [
+        line for line in r.stdout.splitlines() if line.startswith("RUNTIME_UID=")
+    ]
+    runtime_group_lines = [
+        line for line in r.stdout.splitlines() if line.startswith("RUNTIME_GROUPS=")
+    ]
+    assert runtime_uid_lines == ["RUNTIME_UID=10000"], (
+        "The command reached through main-wrapper.sh did not run as hermes: "
+        f"stdout={r.stdout!r}"
+    )
+    assert len(runtime_group_lines) == 1, (
+        f"Expected one runtime group marker: stdout={r.stdout!r}"
+    )
+    runtime_groups = runtime_group_lines[0].removeprefix("RUNTIME_GROUPS=").split()
+    assert "1001" in runtime_groups, (
+        "GID 1001 was lost between Docker PID 1 and the command reached "
+        f"through main-wrapper.sh: groups={runtime_groups!r}, "
+        f"stdout={r.stdout!r}"
+    )
+
+
 def test_container_exit_code_matches_inner_exit(built_image: str) -> None:
     """The container exit code must match the inner process's exit code.
 
