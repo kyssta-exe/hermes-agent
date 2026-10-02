@@ -641,11 +641,11 @@ exclude-newer = "14 days"
 # aiohttp, cryptography: same shape — the advisory fixes are newer than the
 # 14-day window, so the resolver cannot see them without an exception.
 #
-# defusedxml, python-olm, unpaddedbase64: the OPPOSITE shape (#80387, #79434,
+# defusedxml, python-olm, unpaddedbase64, pilk: the OPPOSITE shape (#80387, #79434,
 # #78227 family). These are ancient, effectively frozen releases (2021-2023)
 # whose upload dates are frequently absent from mirror indexes and stale uv
 # HTTP caches. uv treats a missing upload date as "newer than the cutoff" and
-# excludes the package, bricking [youtube]/[wecom]/[matrix] resolution
+# excludes the package, bricking [youtube]/[wecom]/[matrix]/[silk] resolution
 # ("there are no versions of defusedxml"). Exempting them carries zero aging
 # risk — their newest releases are years old — and unbricks resolvers that
 # cannot see upload dates.
@@ -750,6 +750,7 @@ packaging = false
 parallel-web = false
 pathspec = false
 pillow = false
+pilk = false
 piper-tts = "2026-09-04T16:47:32Z"
 prompt-toolkit = false
 psutil = false
