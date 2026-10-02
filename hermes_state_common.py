@@ -701,7 +701,7 @@ WHEN new.role IS NOT old.role
   OR new.tool_name IS NOT old.tool_name
   OR new.display_kind IS NOT old.display_kind
 BEGIN
-    UPDATE messages SET display_identity = NULL, display_order = NULL
+    UPDATE messages SET display_identity = NULL
     WHERE id = new.id OR (
         session_id = old.session_id AND display_identity = old.display_identity
         AND (active = 1 OR compacted = 1)
