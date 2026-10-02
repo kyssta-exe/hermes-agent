@@ -786,6 +786,10 @@ tenacity = false
 ty = false
 tzdata = false
 unpaddedbase64 = false
+# pilk==0.2.4 [silk] extra: exact pin, no upload-time on mirrors
+# bricks plugin-workspace resolution (#131681). Same exemption shape as
+# defusedxml / python-olm / unpaddedbase64.
+pilk = false
 uvicorn = false
 vercel = false
 websockets = false
