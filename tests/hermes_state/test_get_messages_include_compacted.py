@@ -422,10 +422,14 @@ class TestDisplayDedupe:
         changes = db._conn.total_changes
         db.set_message_reaction(sid, row_ids[1], "👍", author="user")
         assert db._conn.total_changes - changes == 1
-        assert db._conn.execute(
+        after = db._conn.execute(
             "SELECT id, display_order, display_identity FROM messages WHERE session_id = ? ORDER BY id",
             (sid,),
-        ).fetchall() == before
+        ).fetchall()
+        # After the fix, the new trigger only clears display_identity, so display_order should survive.
+        for row in after:
+            assert row[1] is not None, f"display_order cleared for id {row[0]}, message jumps to top"
+        assert after == before
 
         changes = db._conn.total_changes
         db.get_messages(sid, include_compacted=True)
