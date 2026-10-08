@@ -342,8 +342,15 @@ _MOA_ADAPTER_SHAPE_BUGS = (
 # OpenRouter 404 when the account data policy excludes the only endpoint. Not
 # model_not_found: the model exists, fallback can't help, body has the fix URL.
 _PROVIDER_POLICY_BLOCKED_PATTERNS = (
-    "no endpoints available matching your guardrail", "no endpoints available matching your data policy",
+    "no endpoints available matching your guardrail",
+    "no endpoints available matching your data policy",
     "no endpoints found matching your data policy",
+    # Newer OpenRouter 404s use the headline "0 endpoints out of N requested
+    # are available matching your guardrail restrictions and data policy. We
+    # removed them for the following reasons ...:\nModel blocked by guardrail: ...".
+    # Matching the leading clause triggers _V_POLICY_BLOCKED immediately instead
+    # of retrying 3x through _V_UNKNOWN first (#133850).
+    "0 endpoints out of",
 )
 
 # Upstream account ban relayed by an aggregator, often as HTTP 200 + an SSE error
