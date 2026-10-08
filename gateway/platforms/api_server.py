@@ -898,9 +898,18 @@ def _resolve_media_to_data_urls(text: str) -> str:
 
 
 def _redact_api_error_text(value: Any, *, limit: int | None = None) -> str:
-    """Redact API-bound error text before it crosses the HTTP boundary."""
-    redacted = redact_sensitive_text(str(value), force=True)
-    return redacted[:limit] if limit is not None else redacted
+    """Return a header-safe representation of error text (no CR/LF) and optionally truncate.
+
+    This replaces generic error messages in headers like ``X-Hermes-Error`` to avoid
+    header injection (CR/LF). If the incoming value is not a string, it is converted to
+    repr(). The limit truncates if set.
+    """
+    if not isinstance(value, str):
+        # Convert non-string errors (e.g., dict) to a compact representation.
+        value = repr(value)
+    # Strip CR/LF to avoid header injection, then truncate.
+    cleaned = value.replace("\r", "").replace("\n", " ").strip()
+    return cleaned[:limit] if limit is not None else cleaned
 
 
 def _openai_error(message: str, err_type: str = "invalid_request_error", param: str = None, code: str = None) -> dict[str, Any]:
