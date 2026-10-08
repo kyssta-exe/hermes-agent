@@ -344,6 +344,7 @@ _MOA_ADAPTER_SHAPE_BUGS = (
 _PROVIDER_POLICY_BLOCKED_PATTERNS = (
     "no endpoints available matching your guardrail", "no endpoints available matching your data policy",
     "no endpoints found matching your data policy",
+    "0 endpoints out of",
 )
 
 # Upstream account ban relayed by an aggregator, often as HTTP 200 + an SSE error
