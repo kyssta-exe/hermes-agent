@@ -71,6 +71,14 @@ class TestRedactApiErrorText:
     def test_limit_truncates_after_redaction(self):
         assert len(_redact_api_error_text("x" * 500, limit=50)) == 50
 
+    def test_strips_cr_lf_for_header_safety(self):
+        """aiohttp rejects CR/LF in response headers; _redact_api_error_text must strip them."""
+        out = _redact_api_error_text("line one\nline two", limit=200)
+        assert "\n" not in out and "\r" not in out
+        out2 = _redact_api_error_text("line one\r\nline two", limit=200)
+        assert "\n" not in out2 and "\r" not in out2
+        assert "line one" in out and "line two" in out
+
 
 # ---------------------------------------------------------------------------
 # ResponseStore
