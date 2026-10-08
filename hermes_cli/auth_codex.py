@@ -697,7 +697,9 @@ def _is_codex_rate_limit_shaped(code: Any, reason: Any, message: Any) -> bool:
     return (
         code == 429
         or any(k in reason_l for k in ("rate_limit", "usage_limit", "quota"))
-        or any(k in message_l for k in ("rate limit", "usage limit", "quota")))
+        or any(k in message_l for k in ("rate limit", "usage limit", "quota"))
+        or "resets in" in message_l
+    )
 
 
 def _entry_is_rate_limit_exhausted(entry: Dict[str, Any]) -> bool:

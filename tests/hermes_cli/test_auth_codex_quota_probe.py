@@ -95,6 +95,20 @@ def _usage_payload(primary_used: float, secondary_used: float) -> dict:
 # _is_codex_rate_limit_shaped
 # ---------------------------------------------------------------------------
 
+def test_is_codex_rate_limit_shaped():
+    # Test basic rate limit detection
+    assert auth_codex._is_codex_rate_limit_shaped(429, None, None) is True
+    assert auth_codex._is_codex_rate_limit_shaped(None, "rate_limit", None) is True
+    assert auth_codex._is_codex_rate_limit_shaped(None, None, "usage limit") is True
+    assert auth_codex._is_codex_rate_limit_shaped(None, None, "quota exceeded") is True
+    # Test the new "resets in" pattern that was added
+    assert auth_codex._is_codex_rate_limit_shaped(None, None, "Weekly usage limit reached. Resets in 6hr 29min.") is True
+    assert auth_codex._is_codex_rate_limit_shaped(None, None, "rate limit exceeded, resets in 3600s") is True
+    # Test negative cases
+    assert auth_codex._is_codex_rate_limit_shaped(400, None, None) is False
+    assert auth_codex._is_codex_rate_limit_shaped(None, "other_reason", None) is False
+    assert auth_codex._is_codex_rate_limit_shaped(None, None, "some other message") is False
+
 
 
 
