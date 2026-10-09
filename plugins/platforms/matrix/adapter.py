@@ -1884,6 +1884,9 @@ class MatrixAdapter(BasePlatformAdapter):
         if rooms_join or initial:
             self._joined_rooms.update(rooms_join.keys())
             self._invalidate_room_identities()
+        rooms_leave = sync_data.get("rooms", {}).get("leave", {})
+        if rooms_leave:
+            self._joined_rooms.difference_update(rooms_leave.keys())
         self._warn_encrypted_drops(rooms_join, client)
         nb = sync_data.get("next_batch")  # incremental syncs resume from here
         if nb:
