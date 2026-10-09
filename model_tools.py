@@ -328,12 +328,14 @@ def _select_tool_names(enabled_toolsets: Optional[list[str]], disabled_toolsets:
         for ts_name in get_all_toolsets():
             if ts_name not in TOOLSET_SESSION_PLATFORMS:
                 tools.update(resolve_toolset(ts_name))
-    # Disabled toolsets are always subtracted LAST, so a tool in a disabled
-    # toolset is stripped even when a composite (hermes-cli) re-enables it.
-    # This ensures that even if a composite toolset (like hermes-cli) is enabled, any tools belonging to a
-    # disabled toolset are strictly stripped out. See issue #17309.
+    # Disabled toolsets are subtracted, but a tool provided by an enabled toolset
+    # must survive: disabling the `search` toolset must not strip `web_search`
+    # when the `web` toolset is enabled (#134593). Compute the disabled set first
+    # and only subtract tools that no enabled toolset supplies.
     if disabled_toolsets:
-        _apply_toolset_selection(tools, disabled_toolsets, quiet_mode, disable=True)
+        disabled_tools: set = set()
+        _apply_toolset_selection(disabled_tools, disabled_toolsets, quiet_mode, disable=True)
+        tools.difference_update(disabled_tools)
     return tools
 
 
