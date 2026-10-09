@@ -343,7 +343,8 @@ _MOA_ADAPTER_SHAPE_BUGS = (
 # model_not_found: the model exists, fallback can't help, body has the fix URL.
 _PROVIDER_POLICY_BLOCKED_PATTERNS = (
     "no endpoints available matching your guardrail", "no endpoints available matching your data policy",
-    "no endpoints found matching your data policy",
+    "no endpoints found matching your data policy", "0 endpoints out of",
+    "endpoints available matching your guardrail restrictions and data policy",
 )
 
 # Upstream account ban relayed by an aggregator, often as HTTP 200 + an SSE error
