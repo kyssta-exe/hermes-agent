@@ -430,7 +430,16 @@ marker_add_delegate_locked() { # pid ct -> zero ONLY when the delegate was publi
   marker_read || return 1
   marker_judge "$SEEN"
   if [ "$M_PID" != "$MY_PID" ] || [ "$J_OWNER_STATE" -ne 0 ]; then
-    log "update marker is no longer ours; no delegate written"; return 1
+    # The marker's line-1 owner may be a custodian refresher that we forked
+    # (marker_refresher_start), which legitimately replaced us as the claim
+    # owner. In that case the custodian is our child, so we still own the
+    # claim and may write the delegate line. Only refuse when the owner is
+    # neither us nor our descendant.
+    local _parent
+    _parent="$(pid_parent "$M_PID" 2>/dev/null)"
+    if [ "$_parent" != "$MY_PID" ]; then
+      log "update marker is no longer ours; no delegate written"; return 1
+    fi
   fi
   if [ -n "$M_DPID" ] && [ "$M_DPID" != "$1" ] && [ "$J_DELEGATE_STATE" -eq 2 ]; then return 1; fi
   marker_replace "$(marker_canonical "$M_PID" "$M_STARTED_DIGITS" "$M_CT" "$1" "$2")"$'\n' \
