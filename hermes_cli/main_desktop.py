@@ -1514,6 +1514,11 @@ def _desktop_launch_env(args: argparse.Namespace) -> tuple[dict, list[str]]:
     from hermes_constants import socket_safe_tmpdir, with_hermes_node_path
     # with_hermes_node_path() copies os.environ when called with no arg.
     env = with_hermes_node_path()
+    
+    # Clear inherited ELECTRON_RUN_AS_NODE which would make Electron run as
+    # a Node.js process instead of launching the GUI (#135635).
+    env.pop("ELECTRON_RUN_AS_NODE", None)
+    
     tmpdir = env.get("TMPDIR", "")
     if sys.platform == "linux" and len(os.fsencode(tmpdir)) > _ELECTRON_TMPDIR_MAX_BYTES:
         # A longer TMPDIR hangs requestSingleInstanceLock(). Only Chromium's socket dir moves:
