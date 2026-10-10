@@ -126,8 +126,15 @@ def _cross_process_init_lock(path: Path):
     because ``_INIT_LOCK`` still serializes same-process threads and init is
     idempotent: two racing first-inits mean redundant work, not corruption.
     """
+    # Resolve symlinks so locks land next to the real DB, not the symlink's
+    # parent (which may be read-only, e.g. ProtectSystem=strict on Linux).
+    # See #135113, #135107.
+    try:
+        resolved = path.resolve()
+    except OSError:
+        resolved = path
     path.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = path.with_name(path.name + ".init.lock")
+    lock_path = resolved.with_name(resolved.name + ".init.lock")
     handle = lock_path.open("a+b")
     acquired = False
     try:
@@ -177,7 +184,13 @@ def _dispatch_tick_lock(db_path: Path):
     lock is the defense-in-depth that prevents two dispatchers from ever writing concurrently *regardless of
     how the second one got there*.
     """
-    lock_path = db_path.with_name(db_path.name + ".dispatch.lock")
+    # Resolve symlinks so lock lands next to the real DB, not the symlink's
+    # parent (which may be read-only). See #135113, #135107.
+    try:
+        resolved = db_path.resolve()
+    except OSError:
+        resolved = db_path
+    lock_path = resolved.with_name(resolved.name + ".dispatch.lock")
     handle = None
     acquired = False
     try:
