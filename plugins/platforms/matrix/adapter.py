@@ -1881,6 +1881,20 @@ class MatrixAdapter(BasePlatformAdapter):
         to-device key shares queued while offline."""
         self._last_sync_ts = time.time()
         rooms_join = sync_data.get("rooms", {}).get("join", {})
+        # rooms.leave arrives on incremental syncs when the bot leaves or is kicked/banned.
+        # Without pruning, _joined_rooms goes stale between reconnects and every join path
+        # (_join_room_by_id, _schedule_invite_join, _schedule_pending_invite_joins) short-circuits
+        # on the ghost room, so a later re-invite is silently dropped (#134006).
+        rooms_leave = sync_data.get("rooms", {}).get("leave", {})
+        if isinstance(rooms_leave, dict) and rooms_leave:
+            left = self._joined_rooms.intersection(rooms_leave.keys())
+            if left:
+                self._joined_rooms.difference_update(left)
+                self._invalidate_room_identities()
+                logger.info(
+                    "Matrix: left %d room(s) per sync (%s); a re-invite can now be honored",
+                    len(left), ", ".join(sorted(str(r) for r in left)),
+                )
         if rooms_join or initial:
             self._joined_rooms.update(rooms_join.keys())
             self._invalidate_room_identities()
