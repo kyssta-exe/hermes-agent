@@ -456,6 +456,7 @@ dingtalk = [
   "dingtalk-stream==0.24.3",
   "alibabacloud-dingtalk==2.2.42",
   "qrcode==7.4.2",
+  "python-socks; extra == 'dingtalk'",
 ]
 feishu = ["lark-oapi==1.6.8", "qrcode==7.4.2"]
 google = [
