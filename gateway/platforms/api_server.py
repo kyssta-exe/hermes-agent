@@ -898,8 +898,16 @@ def _resolve_media_to_data_urls(text: str) -> str:
 
 
 def _redact_api_error_text(value: Any, *, limit: int | None = None) -> str:
-    """Redact API-bound error text before it crosses the HTTP boundary."""
+    """Redact API-bound error text before it crosses the HTTP boundary.
+
+    CR and LF characters are replaced with spaces: aiohttp raises
+    ``ValueError: Forbidden control character detected in headers`` when a
+    response header value contains them, so the X-Hermes-Error header would
+    never be sent and the client would see a dropped connection instead of an
+    HTTP error (#133848).
+    """
     redacted = redact_sensitive_text(str(value), force=True)
+    redacted = redacted.replace("\n", " ").replace("\r", " ")
     return redacted[:limit] if limit is not None else redacted
 
 

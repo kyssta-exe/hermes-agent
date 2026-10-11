@@ -60,7 +60,13 @@ class SSHEnvironment(BaseEnvironment):
                  probe_only: bool = False, sync_files: bool = True):
         super().__init__(cwd=cwd, timeout=timeout)
         self.host, self.user, self.port, self.key_path = host, user, port, key_path
-        self.control_dir = Path(tempfile.gettempdir()) / "hermes-ssh"
+        # Use a short tempdir for ControlMaster sockets: the sun_path limit is 104–108 bytes on
+        # Linux/macOS, and a deep per-profile scratch dir (~/.hermes/profiles/<name>/cache/scratch)
+        # plus the 16-hex socket name and OpenSSH's 17-byte suffix can exceed it.  socket_safe_tmpdir
+        # picks /tmp (or an equivalent short dir) when the scratch tmpdir is too deep.
+        from hermes_constants import socket_safe_tmpdir
+        _ssh_tmpdir = Path(socket_safe_tmpdir()) if len(socket_safe_tmpdir()) < 60 else Path(tempfile.gettempdir())
+        self.control_dir = _ssh_tmpdir / "hermes-ssh"
         self.control_dir.mkdir(parents=True, exist_ok=True)
         # Short, deterministic socket name: the path must stay under macOS's 104-byte sun_path
         # limit (raw user@host:port + SSH's 16-byte suffix under a deep $TMPDIR exceeds it), and
