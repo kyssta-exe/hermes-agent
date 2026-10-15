@@ -1,0 +1,30 @@
+name: discord-presence
+repo: https://github.com/kyssta-exe/hermes-discord-presence
+sha: e51ced86c8eb7eb8251567276dfb9281b95e2fb2
+subdir: discord-presence
+description: "Publishes live Hermes agent telemetry as the Discord bot's own presence - tokens per second, prompt-cache hit rate and context-window occupancy, plus the running tool and the active model (both off by default) - the same numbers the desktop app's status bar shows. The status rotates one metric per update, joins them on one line, or splits them across Discord's two presence lines (a custom status and a Watching/Playing activity) so every metric is visible at once, with a dot that tracks the state: online while working, idle when quiet, dnd when context occupancy crosses a configured threshold. Also adds a /pulse command, an agent_pulse tool and a hermes discord-presence CLI. Disclosure - the metrics are published to the bot's public presence, so anyone who can see the bot in the server sees them (the running tool and the active model are the most revealing segments and both default to off). Updates reuse the gateway's existing Discord connection - a two-line presence sends a raw op-3 presence payload down that same socket - at most once per configured interval (10-600 s, default 20), and are skipped entirely when nothing changed, so an idle bot sends almost nothing. The plugin reads no credentials and nothing outside its own directory, makes no network calls of its own and writes nothing to disk: it keeps an in-memory rolling window of hook payloads. Observer-only - no prompt rewriting, no middleware, no core overrides, no background processes, no self-updater, no Python dependencies."
+maintainer: kyssta-exe
+title: Discord Presence
+tier: community
+category: platform
+version: "1.1.0"
+docs_url: https://github.com/kyssta-exe/hermes-discord-presence/blob/e51ced86c8eb7eb8251567276dfb9281b95e2fb2/README.md
+screenshots:
+  - https://raw.githubusercontent.com/kyssta-exe/hermes-discord-presence/e51ced86c8eb7eb8251567276dfb9281b95e2fb2/docs/examples/thinking.png
+  - https://raw.githubusercontent.com/kyssta-exe/hermes-discord-presence/e51ced86c8eb7eb8251567276dfb9281b95e2fb2/docs/examples/tokens-per-second.png
+  - https://raw.githubusercontent.com/kyssta-exe/hermes-discord-presence/e51ced86c8eb7eb8251567276dfb9281b95e2fb2/docs/examples/cache-hit.png
+  - https://raw.githubusercontent.com/kyssta-exe/hermes-discord-presence/e51ced86c8eb7eb8251567276dfb9281b95e2fb2/docs/examples/model.png
+platforms: []
+capabilities:
+  provides_tools:
+    - agent_pulse
+  provides_hooks:
+    - pre_api_request
+    - post_api_request
+    - api_request_error
+    - pre_tool_call
+    - post_tool_call
+    - pre_llm_call
+    - post_llm_call
+  provides_middleware: []
+  requires_env: []
