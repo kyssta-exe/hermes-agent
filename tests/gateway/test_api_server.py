@@ -56,21 +56,36 @@ from gateway.platforms.api_server import (
 
 class TestRedactApiErrorText:
     def test_masks_secret_value_but_preserves_structure(self):
-        secret = "sk-api-server-leak-1234567890"
+        secret = "«redacted:sk-…»"
         out = _redact_api_error_text(Exception(f"auth failed OPENAI_API_KEY={secret}"))
         assert secret not in out
         assert "OPENAI_API_KEY=" in out
 
     def test_redacts_regardless_of_global_redaction_setting(self):
         # force=True must mask even when global redaction is disabled.
-        secret = "sk-forced-redaction-0987654321"
+        secret = "«redacted:sk-…»"
         with patch("agent.redact._REDACT_ENABLED", False):
             out = _redact_api_error_text(Exception(f"boom AWS_SECRET_ACCESS_KEY={secret}"))
         assert secret not in out
+        assert "AWS_SECRET_ACCESS_KEY=" in out
 
     def test_limit_truncates_after_redaction(self):
         assert len(_redact_api_error_text("x" * 500, limit=50)) == 50
 
+    def test_strips_crlf_for_header_safety(self):
+        # _redact_api_error_text must strip CR/LF to be safe for HTTP headers
+        # (prevents header injection attacks like #133848)
+        crlf_text = "line1\\r\\nline2\\r\\nline3"
+        result = _redact_api_error_text(crlf_text)
+        assert "\\r" not in result
+        assert "\\n" not in result
+        assert result == "line1 line2 line3"
+
+        # Also test with limit
+        limited = _redact_api_error_text(crlf_text, limit=10)
+        assert "\\r" not in limited
+        assert "\\n" not in limited
+        assert limited == "line1 li"
 
 # ---------------------------------------------------------------------------
 # ResponseStore
