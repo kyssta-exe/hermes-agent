@@ -799,6 +799,8 @@ def _resolve_media_to_data_urls(text: str) -> str:
 def _redact_api_error_text(value: Any, *, limit: int | None = None) -> str:
     """Redact API-bound error text before it crosses the HTTP boundary."""
     redacted = redact_sensitive_text(str(value), force=True)
+    # Strip control characters (newlines, tabs, etc.) to prevent header injection
+    redacted = re.sub(r"[\x00-\x1f\x7f]", "", redacted)
     return redacted[:limit] if limit is not None else redacted
 
 
